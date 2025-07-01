@@ -9,7 +9,7 @@ This repository contains R code to simulate and visualise how selection bias cou
 
 The script generates simulated data with genetic instruments and performs IV regression analysis after selection based on body size and cancer status. Two models are considered:
 
-- Additive selection: where selection depends on childhood/adult body size and cancer.
+- Additive selection: where selection depends on childhood body size and cancer.
 - Interaction-only selection: where selection depends on the interaction between childhood body size and cancer.
 
 The simulations vary selection parameters and examine whether bias alone could account for the observed effect size.
