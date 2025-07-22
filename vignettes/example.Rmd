@@ -1,0 +1,65 @@
+---
+title: "example"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{example}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  evaluate = FALSE
+)
+```
+
+```{r setup}
+library(MrColliderCheck)
+```
+
+Example analysis for early and later measures of adiposity on breast cancer risk
+
+```{r}
+# Run additive selection simulations
+bodysize_range <- seq(-5, 0, by = 0.2)
+cancer_levels <- seq(0, -5, by = -1)
+line_results <- simulate_lines(bodysize_range, cancer_levels)
+
+# Plot: Additive Selection
+ggplot(line_results, aes(x = bodysize_sel_child, y = beta, color = as.factor(cancer_sel))) +
+  geom_line(size = 1) +
+  geom_ribbon(aes(ymin = lower, ymax = upper, fill = as.factor(cancer_sel)), alpha = 0.2, color = NA) +
+  geom_hline(yintercept = log(0.59), linetype = "dashed", color = "red") +
+  labs(
+    title = "Simulated bias in IV estimates of childhood body size on breast cancer under additive selection (no true effect)",
+    x = "Selection on childhood body size (negative = thinner more likely selected)",
+    y = "Estimated log(OR)",
+    color = "Cancer selection",
+    fill = "Cancer selection"
+  ) +
+  theme_minimal()
+```
+
+
+
+
+```{r}
+
+interaction_range <- seq(0, -5, by = -1)
+sim_interaction_only <- simulate_interaction_only(interaction_range)
+
+# Plot: Interaction-Dependent Selection
+ggplot(sim_interaction_only, aes(x = interaction_sel, y = beta)) +
+  geom_line(size = 1.2) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2) +
+  geom_hline(yintercept = log(0.59), linetype = "dashed", color = "red") +
+  labs(
+    title = "Simulated bias in IV estimates of childhood body size on breast cancer under interaction-dependent selection (no true effect)",
+    x = "Interaction term: childhood body size × breast cancer",
+    y = "Estimated log(OR)"
+  ) +
+  theme_minimal()
+
+```

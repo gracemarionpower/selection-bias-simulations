@@ -1,0 +1,22 @@
+Package: MrColliderCheck
+Title: Simulations to Assess Selection Bias in Mendelian Randomization
+Version: 0.0.0.9000
+Authors@R: 
+    person(given="Grace", family="Power", email="grace.power@example.com", role = c("aut", "cre", "maintainer"),
+           comment = c(ORCID = "0000-0002-1234-5678"))
+Description: This R package provides simple functions to simulate data and assess selection bias in Mendelian Randomization studies. It does this by simulating exposures and outcomes that influence selection into the study, and then examines the degree to which MR associations are induced by the selection bias.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
+Imports:
+    dplyr,
+    mvtnorm,
+    ivreg,
+    ggplot2,
+    purrr,
+    tibble
+Suggests: 
+    knitr,
+    rmarkdown
+VignetteBuilder: knitr
