@@ -192,16 +192,19 @@ sim_results <- left_join(sim_results, selection_summary,
                          by = c("bodysize_sel_child", "cancer_sel", "interaction_sel"))
 
 # Plot results
-ggplot(sim_results, aes(x = bodysize_sel_child, y = beta, color = as.factor(cancer_sel))) +
-  geom_line(size = 1) +
+ggplot(sim_results, aes(x = bodysize_sel_child, y = beta)) +
+  geom_line(aes(color = as.factor(cancer_sel)), size = 1) +
   geom_ribbon(aes(ymin = lower, ymax = upper, fill = as.factor(cancer_sel)), alpha = 0.2, color = NA) +
+  geom_point(aes(size = mean_selection_prob), alpha = 0.8, shape = 21, fill = "white") +
   facet_wrap(~ interaction_sel, labeller = label_both) +
   geom_hline(yintercept = log(0.59), linetype = "dashed", color = "red") +
+  scale_size_continuous(range = c(1, 5), name = "Mean probability of selection") +
   labs(
-    title = "Simulated IV bias under additive and interaction-based selection (no true effect)",
+    title = "IV bias under additive & interaction-based selection, with point size reflecting selection probability",
     x = "Selection on childhood body size",
     y = "Estimated log(OR) per category increase",
     color = "Cancer selection",
     fill = "Cancer selection"
   ) +
   theme_minimal()
+
