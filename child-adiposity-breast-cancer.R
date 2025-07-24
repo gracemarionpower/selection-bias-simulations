@@ -132,41 +132,79 @@ simulate_joint_selection <- function(child_vals, cancer_vals, interaction_vals, 
 # ------------------------------------------------------------------------------
 # Run simulation and plot
 # ------------------------------------------------------------------------------
-bodysize_range <- seq(-5, 0, by = 1)
-cancer_range <- seq(0, -5, by = -1)
-interaction_range <- c(0, -1, -2, -3, -4, -5)
+bodysize_range <- c(0, -2, -4)
+cancer_range <- c(0, -2, -4)
+interaction_range <- c(0, -2, -4)
 
 sim_results <- simulate_joint_selection(bodysize_range, cancer_range, interaction_range)
 
 sim_results <- sim_results %>%
   mutate(interaction_label = factor(case_when(
     interaction_sel == 0  ~ "No interaction",
-    interaction_sel == -1 ~ "Weak interaction",
-    interaction_sel == -2 ~ "Moderate interaction",
-    interaction_sel == -3 ~ "Strong interaction",
-    interaction_sel == -4 ~ "Very strong interaction",
-    interaction_sel == -5 ~ "Extreme interaction",
+    interaction_sel == -2 ~ "Some interaction",
+    interaction_sel == -4 ~ "Strong interaction",
     TRUE ~ paste("Interaction =", interaction_sel)
   ), levels = c(
     "No interaction",
-    "Weak interaction",
-    "Moderate interaction",
-    "Strong interaction",
-    "Very strong interaction",
-    "Extreme interaction"
+    "Some interaction",
+    "Strong interaction"
+  )))
+
+sim_results <- sim_results %>%
+  mutate(
+    cancer_label = factor(case_when(
+      cancer_sel == 0   ~ "No cancer selection",
+      cancer_sel == -2  ~ "Some cancer under-selection",
+      cancer_sel == -4  ~ "Strong cancer under-selection",
+      TRUE ~ paste("Cancer selection =", cancer_sel)
+    ), levels = c(
+      "No cancer selection",
+      "Some cancer under-selection",
+      "Strong cancer under-selection"
+    ))
+  )
+
+sim_results <- sim_results %>%
+  mutate(bodysize_label = factor(case_when(
+    bodysize_sel_child == 0   ~ "No body size selection",
+    bodysize_sel_child == -2  ~ "Some selection favoring thin children",
+    bodysize_sel_child == -4  ~ "Strong selection favoring thin children",
+    TRUE ~ paste("Body size selection =", bodysize_sel_child)
+  ), levels = c(
+    "No body size selection",
+    "Some selection favoring thin children",
+    "Strong selection favoring thin children"
   )))
 
 # Plot results
-ggplot(sim_results, aes(x = bodysize_sel_child, y = beta, color = as.factor(cancer_sel))) +
+ggplot(sim_results, aes(x = bodysize_sel_child, y = beta, color = cancer_label)) +
   geom_line(size = 1) +
-  geom_ribbon(aes(ymin = lower, ymax = upper, fill = as.factor(cancer_sel)), alpha = 0.2, color = NA) +
-  facet_wrap(~ interaction_label) +  # <-- this is the fix
+  geom_ribbon(aes(ymin = lower, ymax = upper, fill = cancer_label), alpha = 0.2, color = NA) +
+  facet_wrap(~ interaction_label) +
   geom_hline(yintercept = log(0.59), linetype = "dashed", color = "red") +
-  labs(
-    title = "Simulated IV bias under additive and interaction-based selection (no true effect)",
-    x = "Selection on childhood body size",
-    y = "Estimated log(OR) per category increase",
-    color = "Cancer selection",
-    fill = "Cancer selection"
+
+  # Add clear body size selection labels on x-axis
+  scale_x_continuous(
+    breaks = c(0, -2, -4),
+    labels = c(
+      "No body size selection",
+      "Some selection\nfavoring thin children",
+      "Strong selection\nfavoring thin children"
+    )
   ) +
-  theme_minimal()
+
+  labs(
+    title = "Simulated IV bias under exposure-, outcome-, and interaction-based selection",
+    subtitle = "Dashed line = observed MR effect (log OR ≈ -0.527)",
+    x = "Selection on childhood body size",
+    y = "Estimated log(OR) per category increase in childhood body size",
+    color = "Cancer selection bias",
+    fill = "Cancer selection bias"
+  ) +
+
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(face = "bold"),
+    legend.position = "right"
+  )
