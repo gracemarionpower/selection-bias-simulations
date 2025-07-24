@@ -96,7 +96,7 @@ estimation <- function(dat) {
 # ------------------------------------------------------------------------------
 # Simulation across grid of selection parameters
 # ------------------------------------------------------------------------------
-simulate_joint_selection <- function(child_vals, cancer_vals, interaction_vals, n = 1e6) {
+simulate_joint_selection <- function(child_vals, cancer_vals, interaction_vals, n = 1e5) {
   grid <- expand.grid(
     bodysize_sel_child = child_vals,
     cancer_sel = cancer_vals,
@@ -136,7 +136,16 @@ bodysize_range <- c(0, -2, -4)
 cancer_range <- c(0, -2, -4)
 interaction_range <- c(0, -2, -4)
 
-sim_results <- simulate_joint_selection(bodysize_range, cancer_range, interaction_range)
+# Run 50 replicate simulations
+set.seed(123)  # for reproducibility
+sim_results <- purrr::map_dfr(1:50, function(i) {
+  simulate_joint_selection(
+    bodysize_range,
+    cancer_range,
+    interaction_range,
+    n = 1e5  # adjust if needed
+  ) %>% mutate(replicate = i)
+})
 
 sim_results <- sim_results %>%
   mutate(interaction_label = factor(case_when(
@@ -165,45 +174,48 @@ sim_results <- sim_results %>%
   )
 
 sim_results <- sim_results %>%
-  mutate(bodysize_label = factor(case_when(
-    bodysize_sel_child == 0   ~ "No body size selection",
-    bodysize_sel_child == -2  ~ "Some selection favoring thin children",
-    bodysize_sel_child == -4  ~ "Strong selection favoring thin children",
-    TRUE ~ paste("Body size selection =", bodysize_sel_child)
-  ), levels = c(
-    "No body size selection",
-    "Some selection favoring thin children",
-    "Strong selection favoring thin children"
-  )))
+  mutate(
+    bodysize_label = factor(case_when(
+      bodysize_sel_child == 0   ~ "No body size selection",
+      bodysize_sel_child == -2  ~ "Some selection favouring thin children",
+      bodysize_sel_child == -4  ~ "Strong selection favouring thin children"
+    ), levels = c(
+      "No body size selection",
+      "Some selection favouring thin children",
+      "Strong selection favouring thin children"
+    ))
+  )
+
+# Summarize across replicates (mean of estimates and CIs)
+summary_results <- sim_results %>%
+  group_by(bodysize_label, cancer_label, interaction_label) %>%
+  summarise(
+    beta = mean(beta, na.rm = TRUE),
+    lower = mean(lower, na.rm = TRUE),
+    upper = mean(upper, na.rm = TRUE),
+    .groups = "drop"
+  )
+
 
 # Plot results
-ggplot(sim_results, aes(x = bodysize_sel_child, y = beta, color = cancer_label)) +
-  geom_line(size = 1) +
-  geom_ribbon(aes(ymin = lower, ymax = upper, fill = cancer_label), alpha = 0.2, color = NA) +
+ggplot(summary_results, aes(x = bodysize_label, y = beta, color = cancer_label)) +
+  geom_line(aes(group = cancer_label), size = 1) +
+  geom_ribbon(aes(ymin = lower, ymax = upper, fill = cancer_label, group = cancer_label),
+              alpha = 0.2, color = NA) +
   facet_wrap(~ interaction_label) +
   geom_hline(yintercept = log(0.59), linetype = "dashed", color = "red") +
-annotate(
-  "text",
-  x = 0,
-  y = log(0.59),
-  label = "Observed MR log(OR) ≈ -0.527",
-  color = "red",
-  size = 3,
-  vjust = -1,
-  hjust = 0
-  ) +
- scale_x_reverse(
-  limits = c(0.2, -4.2),  # 
-  breaks = c(0, -2, -4),
-  labels = c(
-    "No body size selection",
-    "Some selection\nfavouring thin children",
-    "Strong selection\nfavouring thin children"
-  )
+  annotate(
+    "text",
+    x = 1,
+    y = log(0.59),
+    label = "Observed MR log(OR) ≈ -0.527",
+    color = "red",
+    size = 3,
+    vjust = -1,
+    hjust = 0
   ) +
   labs(
     title = "",
-    subtitle = "",
     x = "Selection on childhood body size",
     y = "Estimated log(OR) per category increase in childhood body size",
     color = "Cancer selection bias",
