@@ -30,20 +30,29 @@ dgm_combined <- function(n, rg, prs_beta_child, prs_beta_adult, cancer_prev,
   bodysize_adult_latent <- prs[, 2] * prs_beta_adult + rnorm(n, sd = sqrt(1 - prs_beta_adult^2))
   cancer <- rbinom(n, 1, cancer_prev)
 
-  cut_child <- quantile(bodysize_child_latent, probs = c(0.23, 0.77))
-  cut_adult <- quantile(bodysize_adult_latent, probs = c(0.23, 0.77))
+# UK Biobank empirical proportions:
+# thinner  = 174048 / 522653 ≈ 0.333
+# plumper  =  83032 / 522653 ≈ 0.159
+# average  = 265573 / 522653 ≈ 0.508
+# Cutoffs: P(thinner) = 0.333 → 33.3rd percentile
+#          P(plumper) = 1 - 0.159 = 0.841 → 84.1st percentile
 
-  bodysize_child <- as.numeric(cut(
-    bodysize_child_latent,
-    breaks = c(-Inf, cut_child[1], cut_child[2], Inf),
-    labels = c(0, 1, 2), right = TRUE
-  ))
+cut_child <- quantile(bodysize_child_latent, probs = c(0.333, 0.841))
+cut_adult <- quantile(bodysize_adult_latent, probs = c(0.333, 0.841))
 
-  bodysize_adult <- as.numeric(cut(
-    bodysize_adult_latent,
-    breaks = c(-Inf, cut_adult[1], cut_adult[2], Inf),
-    labels = c(0, 1, 2), right = TRUE
-  ))
+bodysize_child <- as.numeric(cut(
+  bodysize_child_latent,
+  breaks = c(-Inf, cut_child[1], cut_child[2], Inf),
+  labels = c(0, 1, 2),  # 0 = thinner, 1 = average, 2 = plumper
+  right = TRUE
+))
+
+bodysize_adult <- as.numeric(cut(
+  bodysize_adult_latent,
+  breaks = c(-Inf, cut_adult[1], cut_adult[2], Inf),
+  labels = c(0, 1, 2),  # 0 = thinner, 1 = average, 2 = plumper
+  right = TRUE
+))
 
   selection_liability <-
     bodysize_child_latent * bodysize_sel_child +
