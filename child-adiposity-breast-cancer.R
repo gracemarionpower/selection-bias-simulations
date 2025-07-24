@@ -125,7 +125,7 @@ simulate_joint_selection <- function(child_vals, cancer_vals, interaction_vals, 
 # ------------------------------------------------------------------------------
 bodysize_range <- seq(-5, 0, by = 1)
 cancer_range <- seq(0, -5, by = -1)
-interaction_range <- c(0, -2.5, -5)
+interaction_range <- c(0, -1, -2, -3, -4, -5)
 
 sim_results <- simulate_joint_selection(bodysize_range, cancer_range, interaction_range)
 
