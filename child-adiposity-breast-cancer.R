@@ -136,14 +136,14 @@ bodysize_range <- c(0, -2, -4)
 cancer_range <- c(0, -2, -4)
 interaction_range <- c(0, -2, -4)
 
-# Run 50 replicate simulations
-set.seed(123)  # for reproducibility
-sim_results <- purrr::map_dfr(1:50, function(i) {
+# Run 500 replicate simulations
+set.seed(1407)  # for reproducibility
+sim_results <- purrr::map_dfr(1:500, function(i) {
   simulate_joint_selection(
     bodysize_range,
     cancer_range,
     interaction_range,
-    n = 1e5  # adjust if needed
+    n = 1e5  # 
   ) %>% mutate(replicate = i)
 })
 
