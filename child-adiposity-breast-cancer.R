@@ -182,29 +182,38 @@ ggplot(sim_results, aes(x = bodysize_sel_child, y = beta, color = cancer_label))
   geom_ribbon(aes(ymin = lower, ymax = upper, fill = cancer_label), alpha = 0.2, color = NA) +
   facet_wrap(~ interaction_label) +
   geom_hline(yintercept = log(0.59), linetype = "dashed", color = "red") +
-
-  # ✅ This is the fix: reverse the x-axis so 0 appears before -4
-  scale_x_reverse(
-    breaks = c(0, -2, -4),
-    labels = c(
-      "No body size selection",
-      "Some selection\nfavouring thin children",
-      "Strong selection\nfavouring thin children"
-    )
+annotate(
+  "text",
+  x = 0,
+  y = log(0.59),
+  label = "Observed MR log(OR) ≈ -0.527",
+  color = "red",
+  size = 3,
+  vjust = -1,
+  hjust = 0
   ) +
-
+ scale_x_reverse(
+  limits = c(0.2, -4.2),  # 
+  breaks = c(0, -2, -4),
+  labels = c(
+    "No body size selection",
+    "Some selection\nfavouring thin children",
+    "Strong selection\nfavouring thin children"
+  )
+  ) +
   labs(
-    title = "Simulated IV bias under exposure-, outcome-, and interaction-based selection",
-    subtitle = "Dashed line = observed MR effect (log OR ≈ -0.527)",
+    title = "",
+    subtitle = "",
     x = "Selection on childhood body size",
     y = "Estimated log(OR) per category increase in childhood body size",
     color = "Cancer selection bias",
     fill = "Cancer selection bias"
   ) +
   theme_minimal() +
-theme(
-  panel.spacing = unit(2, "lines"),         # <-- this increases spacing between panels
-  axis.text.x = element_text(angle = 45, hjust = 1),
-  strip.text = element_text(face = "bold"),
-  legend.position = "right"
-)
+  theme(
+    panel.spacing = unit(2, "lines"),
+    axis.text.x = element_text(angle = 60, hjust = 1),
+    strip.text = element_text(face = "bold"),
+    legend.position = "right"
+  )
+
