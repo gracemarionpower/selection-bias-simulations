@@ -138,11 +138,29 @@ interaction_range <- c(0, -1, -2, -3, -4, -5)
 
 sim_results <- simulate_joint_selection(bodysize_range, cancer_range, interaction_range)
 
+sim_results <- sim_results %>%
+  mutate(interaction_label = factor(case_when(
+    interaction_sel == 0  ~ "No interaction",
+    interaction_sel == -1 ~ "Weak interaction",
+    interaction_sel == -2 ~ "Moderate interaction",
+    interaction_sel == -3 ~ "Strong interaction",
+    interaction_sel == -4 ~ "Very strong interaction",
+    interaction_sel == -5 ~ "Extreme interaction",
+    TRUE ~ paste("Interaction =", interaction_sel)
+  ), levels = c(
+    "No interaction",
+    "Weak interaction",
+    "Moderate interaction",
+    "Strong interaction",
+    "Very strong interaction",
+    "Extreme interaction"
+  )))
+
 # Plot results
 ggplot(sim_results, aes(x = bodysize_sel_child, y = beta, color = as.factor(cancer_sel))) +
   geom_line(size = 1) +
   geom_ribbon(aes(ymin = lower, ymax = upper, fill = as.factor(cancer_sel)), alpha = 0.2, color = NA) +
-  facet_wrap(~ interaction_sel, labeller = label_both) +
+  facet_wrap(~ interaction_label) +  # <-- this is the fix
   geom_hline(yintercept = log(0.59), linetype = "dashed", color = "red") +
   labs(
     title = "Simulated IV bias under additive and interaction-based selection (no true effect)",
