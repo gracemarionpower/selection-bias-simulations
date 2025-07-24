@@ -183,13 +183,13 @@ ggplot(sim_results, aes(x = bodysize_sel_child, y = beta, color = cancer_label))
   facet_wrap(~ interaction_label) +
   geom_hline(yintercept = log(0.59), linetype = "dashed", color = "red") +
 
-  # Add clear body size selection labels on x-axis
-  scale_x_continuous(
+  # ✅ This is the fix: reverse the x-axis so 0 appears before -4
+  scale_x_reverse(
     breaks = c(0, -2, -4),
     labels = c(
       "No body size selection",
-      "Some selection\nfavoring thin children",
-      "Strong selection\nfavoring thin children"
+      "Some selection\nfavouring thin children",
+      "Strong selection\nfavouring thin children"
     )
   ) +
 
@@ -201,10 +201,10 @@ ggplot(sim_results, aes(x = bodysize_sel_child, y = beta, color = cancer_label))
     color = "Cancer selection bias",
     fill = "Cancer selection bias"
   ) +
-
   theme_minimal() +
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    strip.text = element_text(face = "bold"),
-    legend.position = "right"
-  )
+theme(
+  panel.spacing = unit(2, "lines"),         # <-- this increases spacing between panels
+  axis.text.x = element_text(angle = 45, hjust = 1),
+  strip.text = element_text(face = "bold"),
+  legend.position = "right"
+)
