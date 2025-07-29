@@ -208,7 +208,7 @@ ggplot(summary_results, aes(x = bodysize_label, y = beta, color = cancer_label))
     "text",
     x = 1,
     y = log(0.59),
-    label = "Observed MR log(OR) ≈ -0.527",
+    label = "Observed MR log(OR) ≈ -0.53",
     color = "red",
     size = 3,
     vjust = -1,
