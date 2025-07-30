@@ -30,29 +30,22 @@ dgm_combined <- function(n, rg, prs_beta_child, prs_beta_adult, cancer_prev,
   bodysize_adult_latent <- prs[, 2] * prs_beta_adult + rnorm(n, sd = sqrt(1 - prs_beta_adult^2))
   cancer <- rbinom(n, 1, cancer_prev)
 
-# UK Biobank empirical proportions:
-# thinner  = 174048 / 522653 ≈ 0.333
-# plumper  =  83032 / 522653 ≈ 0.159
-# average  = 265573 / 522653 ≈ 0.508
-# Cutoffs: P(thinner) = 0.333 → 33.3rd percentile
-#          P(plumper) = 1 - 0.159 = 0.841 → 84.1st percentile
+  cut_child <- quantile(bodysize_child_latent, probs = c(0.333, 0.841))
+  cut_adult <- quantile(bodysize_adult_latent, probs = c(0.333, 0.841))
 
-cut_child <- quantile(bodysize_child_latent, probs = c(0.333, 0.841))
-cut_adult <- quantile(bodysize_adult_latent, probs = c(0.333, 0.841))
+  bodysize_child <- as.numeric(cut(
+    bodysize_child_latent,
+    breaks = c(-Inf, cut_child[1], cut_child[2], Inf),
+    labels = c(0, 1, 2),  
+    right = TRUE
+  ))
 
-bodysize_child <- as.numeric(cut(
-  bodysize_child_latent,
-  breaks = c(-Inf, cut_child[1], cut_child[2], Inf),
-  labels = c(0, 1, 2),  # 0 = thinner, 1 = average, 2 = plumper
-  right = TRUE
-))
-
-bodysize_adult <- as.numeric(cut(
-  bodysize_adult_latent,
-  breaks = c(-Inf, cut_adult[1], cut_adult[2], Inf),
-  labels = c(0, 1, 2),  # 0 = thinner, 1 = average, 2 = plumper
-  right = TRUE
-))
+  bodysize_adult <- as.numeric(cut(
+    bodysize_adult_latent,
+    breaks = c(-Inf, cut_adult[1], cut_adult[2], Inf),
+    labels = c(0, 1, 2),  
+    right = TRUE
+  ))
 
   selection_liability <-
     bodysize_child_latent * bodysize_sel_child +
@@ -104,27 +97,30 @@ simulate_joint_selection <- function(child_vals, cancer_vals, interaction_vals, 
   )
 
   results <- lapply(1:nrow(grid), function(i) {
-    dat <- dgm_combined(
-      n = n,
-      rg = 0.67,
-      prs_beta_child = 0.1,
-      prs_beta_adult = 0.1,
-      cancer_prev = 1/7,
-      bodysize_sel_child = grid$bodysize_sel_child[i],
-      bodysize_sel_adult = 0,
-      cancer_sel = grid$cancer_sel[i],
-      interaction_sel = grid$interaction_sel[i]
-    )
+  dat <- dgm_combined(
+    n = n,
+    rg = 0.67,
+    prs_beta_child = 0.1,
+    prs_beta_adult = 0.1,
+    cancer_prev = 1/7,
+    bodysize_sel_child = grid$bodysize_sel_child[i],
+    bodysize_sel_adult = 0,
+    cancer_sel = grid$cancer_sel[i],
+    interaction_sel = grid$interaction_sel[i]
+  )
+
+  prop_selected <- mean(dat$selection)
 
     est <- estimation(dat)
-    if (is.null(est)) return(NULL)
+  if (is.null(est)) return(NULL)
 
-    est %>% mutate(
-      bodysize_sel_child = grid$bodysize_sel_child[i],
-      cancer_sel = grid$cancer_sel[i],
-      interaction_sel = grid$interaction_sel[i]
-    )
-  })
+  est %>% mutate(
+    bodysize_sel_child = grid$bodysize_sel_child[i],
+    cancer_sel = grid$cancer_sel[i],
+    interaction_sel = grid$interaction_sel[i],
+    prop_selected = prop_selected
+  )
+})
 
   bind_rows(results)
 }
@@ -229,3 +225,11 @@ ggplot(summary_results, aes(x = bodysize_label, y = beta, color = cancer_label))
     legend.position = "right"
   )
 
+
+
+selection_summary <- sim_results %>%
+  group_by(bodysize_sel_child, cancer_sel, interaction_sel) %>%
+  summarise(
+    mean_prop_selected = mean(prop_selected, na.rm = TRUE),
+    .groups = "drop"
+  )
