@@ -139,7 +139,7 @@ sim_results <- purrr::map_dfr(1:500, function(i) {
     bodysize_range,
     cancer_range,
     interaction_range,
-    n = 1e5  # 
+    n = 2e5  # 
   ) %>% mutate(replicate = i)
 })
 
