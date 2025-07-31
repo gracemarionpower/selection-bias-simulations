@@ -1,0 +1,59 @@
+# Modified data-generating model to track contributions
+
+dgm_combined <- function(n = 200000, rg, prs_beta_child, prs_beta_adult, cancer_prev,
+                         bodysize_sel_child, bodysize_sel_adult, cancer_sel, interaction_sel) {
+  prs <- mvrnorm(n, mu = c(0, 0),
+                 Sigma = matrix(c(1, sqrt(rg), sqrt(rg), 1), 2))
+
+  bodysize_child_latent <- prs[, 1] * prs_beta_child + rnorm(n, sd = sqrt(1 - prs_beta_child^2))
+  bodysize_adult_latent <- prs[, 2] * prs_beta_adult + rnorm(n, sd = sqrt(1 - prs_beta_adult^2))
+  cancer <- rbinom(n, 1, cancer_prev)
+
+  # Individual contributions
+  contrib_child <- bodysize_child_latent * bodysize_sel_child
+  contrib_adult <- bodysize_adult_latent * bodysize_sel_adult
+  contrib_cancer <- cancer * cancer_sel
+  contrib_interaction <- (bodysize_child_latent * cancer) * interaction_sel
+
+  selection_liability <- contrib_child + contrib_adult + contrib_cancer + contrib_interaction
+  selection_prob <- plogis(selection_liability)
+
+  # Logistic noise: variance from Bernoulli sampling (residual selection randomness)
+  noise <- rbinom(n, 1, selection_prob) - selection_prob
+
+  tibble(
+    contrib_child,
+    contrib_adult,
+    contrib_cancer,
+    contrib_interaction,
+    noise
+  )
+}
+
+# Run extreme scenario
+dat <- dgm_combined(
+  n = 200000,
+  rg = 0.67,
+  prs_beta_child = 0.1,
+  prs_beta_adult = 0.1,
+  cancer_prev = 1/7,
+  bodysize_sel_child = -4,
+  bodysize_sel_adult = 0,
+  cancer_sel = -4,
+  interaction_sel = -4
+)
+
+# Contribution variance breakdown
+total_var <- var(dat$contrib_child + dat$contrib_adult + dat$contrib_cancer + dat$contrib_interaction + dat$noise)
+
+contrib_summary <- tibble(
+  term = c("Child BMI", "Adult BMI", "Cancer", "Interaction", "Random noise"),
+  variance = c(var(dat$contrib_child),
+               var(dat$contrib_adult),
+               var(dat$contrib_cancer),
+               var(dat$contrib_interaction),
+               var(dat$noise))
+) %>%
+  mutate(percentage = 100 * variance / total_var)
+
+print(contrib_summary)
