@@ -96,7 +96,7 @@ estimation <- function(dat) {
 # ------------------------------------------------------------------------------
 # Simulation across grid of selection parameters
 # ------------------------------------------------------------------------------
-simulate_joint_selection <- function(child_vals, cancer_vals, interaction_vals, n = 200000) {
+simulate_joint_selection <- function(child_vals, cancer_vals, interaction_vals, n = 246511) {
   grid <- expand.grid(
     bodysize_sel_child = child_vals,
     cancer_sel = cancer_vals,
