@@ -4,6 +4,7 @@
 #        Childhood body size and breast cancer risk
 # Authors: Grace M. Power, Gibran Hemani
 # Date: 24 July 2025
+# Update: 20 August 2025
 # Purpose: Assess whether selection bias can reproduce the observed protective 
 #          MR effect (OR = 0.59; log(OR) ≈ -0.527) of childhood adiposity on 
 #          breast cancer risk, assuming no true causal effect.
@@ -17,52 +18,84 @@ library(ggplot2)
 library(purrr)
 library(tibble)
 library(MASS)
+library(grid) 
 
 # ------------------------------------------------------------------------------
 # Combined data-generating model: additive + interaction selection
 # ------------------------------------------------------------------------------
-dgm_combined <- function(n, rg, prs_beta_child, prs_beta_adult, cancer_prev,
-                         bodysize_sel_child, bodysize_sel_adult, cancer_sel, interaction_sel) {
-  prs <- mvrnorm(n, mu = c(0, 0),
-                 Sigma = matrix(c(1, sqrt(rg), sqrt(rg), 1), 2))
-
-  bodysize_child_latent <- prs[, 1] * prs_beta_child + rnorm(n, sd = sqrt(1 - prs_beta_child^2))
-  bodysize_adult_latent <- prs[, 2] * prs_beta_adult + rnorm(n, sd = sqrt(1 - prs_beta_adult^2))
+dgm_combined <- function(
+    n, rg, cancer_prev,
+    bodysize_sel_child, bodysize_sel_adult, cancer_sel, interaction_sel,
+    phi_track = 0.35,
+    h2_child = 0.10, h2_adult_target = 0.10
+) {
+  
+  # Correlated PRSs (genetic correlation rg)
+  prs <- MASS::mvrnorm(
+    n, mu = c(0, 0),
+    Sigma = matrix(c(1, rg, rg, 1), 2)
+  )
+  
+  # --- Target variance shares after standardisation ---
+  # --- Target variance shares after standardisation ---
+  phi <- phi_track  # keep h2_child and h2_adult_target as passed-in
+  
+  # Child: PRS explains 10%; residual takes the rest (unit variance block)
+  beta_child   <- sqrt(h2_child)            # ≈ 0.316
+  sd_child_eps <- sqrt(1 - h2_child)        # ≈ 0.949
+  
+  # Adult: keep 10% marginal PRS share despite tracking (phi*child)
+  # Var(adult_raw) ≈ phi^2 + 1 if the "adult noise block" has Var=1
+  beta_adult   <- sqrt(h2_adult_target * (1 + phi^2))
+  sd_adult_eps <- sqrt(1 - beta_adult^2)
+  
+  # --- Latents before standardising ---
+  child_latent_raw <- prs[, 1] * beta_child + rnorm(n, sd = sd_child_eps)
+  adult_noise_block <- prs[, 2] * beta_adult + rnorm(n, sd = sd_adult_eps)
+  adult_latent_raw  <- phi * child_latent_raw + adult_noise_block
+  
+  # --- Standardise (so UKB cutpoints behave as intended) ---
+  bodysize_child_latent <- as.numeric(scale(child_latent_raw))
+  bodysize_adult_latent <- as.numeric(scale(adult_latent_raw))
+  
+  # Outcome
   cancer <- rbinom(n, 1, cancer_prev)
-
-# UK Biobank empirical proportions:
-# thinner  = 174048 / 522653 ≈ 0.333
-# plumper  =  83032 / 522653 ≈ 0.159
-# average  = 265573 / 522653 ≈ 0.508
-# Cutoffs: P(thinner) = 0.333 → 33.3rd percentile
-#          P(plumper) = 1 - 0.159 = 0.841 → 84.1st percentile
-
-cut_child <- quantile(bodysize_child_latent, probs = c(0.333, 0.841))
-cut_adult <- quantile(bodysize_adult_latent, probs = c(0.333, 0.841))
-
-bodysize_child <- as.numeric(cut(
-  bodysize_child_latent,
-  breaks = c(-Inf, cut_child[1], cut_child[2], Inf),
-  labels = c(0, 1, 2),  # 0 = thinner, 1 = average, 2 = plumper
-  right = TRUE
-))
-
-bodysize_adult <- as.numeric(cut(
-  bodysize_adult_latent,
-  breaks = c(-Inf, cut_adult[1], cut_adult[2], Inf),
-  labels = c(0, 1, 2),  # 0 = thinner, 1 = average, 2 = plumper
-  right = TRUE
-))
-
+  
+  # UK Biobank empirical proportions:
+  # thinner  = 174048 / 522653 ≈ 0.333
+  # plumper  =  83032 / 522653 ≈ 0.159
+  # average  = 265573 / 522653 ≈ 0.508
+  # Cutoffs: P(thinner) = 0.333 → 33.3rd percentile
+  #          P(plumper) = 1 - 0.159 = 0.841 → 84.1st percentile
+  
+  # UK Biobank empirical proportions:
+  # thinner ≈ 0.333, average ≈ 0.508, plumper ≈ 0.159
+  cut_child <- quantile(bodysize_child_latent, probs = c(0.333, 0.841))
+  cut_adult <- quantile(bodysize_adult_latent, probs = c(0.333, 0.841))
+  
+  # Return numeric 0/1/2 (0 = thinner, 1 = average, 2 = plumper)
+  bodysize_child <- cut(
+    bodysize_child_latent,
+    breaks = c(-Inf, cut_child[1], cut_child[2], Inf),
+    labels = FALSE, right = TRUE
+  ) - 1
+  
+  bodysize_adult <- cut(
+    bodysize_adult_latent,
+    breaks = c(-Inf, cut_adult[1], cut_adult[2], Inf),
+    labels = FALSE, right = TRUE
+  ) - 1
+  
+  
   selection_liability <-
     bodysize_child_latent * bodysize_sel_child +
     bodysize_adult_latent * bodysize_sel_adult +
     cancer * cancer_sel +
     (bodysize_child_latent * cancer) * interaction_sel
-
+  
   selection_prob <- plogis(selection_liability)
   selection <- rbinom(n, 1, selection_prob)
-
+  
   tibble(
     prs_child = prs[, 1],
     prs_adult = prs[, 2],
@@ -79,12 +112,12 @@ bodysize_adult <- as.numeric(cut(
 estimation <- function(dat) {
   dat_selected <- dat[dat$selection == 1, ]
   if (nrow(dat_selected) < 50) return(NULL)
-
+  
   iv_fit <- summary(ivreg(
     cancer ~ bodysize_child + bodysize_adult |
       prs_child + prs_adult, data = dat_selected
   ))
-
+  
   tibble(
     beta  = iv_fit$coefficients["bodysize_child", 1],
     se    = iv_fit$coefficients["bodysize_child", 2],
@@ -102,30 +135,31 @@ simulate_joint_selection <- function(child_vals, cancer_vals, interaction_vals, 
     cancer_sel = cancer_vals,
     interaction_sel = interaction_vals
   )
-
+  
   results <- lapply(1:nrow(grid), function(i) {
     dat <- dgm_combined(
       n = n,
       rg = 0.67,
-      prs_beta_child = 0.1,
-      prs_beta_adult = 0.1,
       cancer_prev = 1/7,
       bodysize_sel_child = grid$bodysize_sel_child[i],
       bodysize_sel_adult = 0,
       cancer_sel = grid$cancer_sel[i],
-      interaction_sel = grid$interaction_sel[i]
+      interaction_sel = grid$interaction_sel[i],
+      phi_track = 0.35,
+      h2_child = 0.10,
+      h2_adult_target = 0.10
     )
-
+    
     est <- estimation(dat)
     if (is.null(est)) return(NULL)
-
+    
     est %>% mutate(
       bodysize_sel_child = grid$bodysize_sel_child[i],
       cancer_sel = grid$cancer_sel[i],
       interaction_sel = grid$interaction_sel[i]
     )
   })
-
+  
   bind_rows(results)
 }
 
@@ -143,7 +177,7 @@ sim_results <- purrr::map_dfr(1:500, function(i) {
     bodysize_range,
     cancer_range,
     interaction_range,
-    n = 1e5  # 
+    n = 246511  # 
   ) %>% mutate(replicate = i)
 })
 
