@@ -1,0 +1,52 @@
+# ------------------------------------------------------------------------------
+# Variance decomposition for selection liability
+# ------------------------------------------------------------------------------
+variance_decomp <- function(n, beta1, beta3, beta4, phi_track = 0.35) {
+  # Simulate data once (large n for stable variances)
+  dat <- dgm_combined(
+    n = n,
+    rg = 0.67,
+    cancer_prev = 1/7,
+    bodysize_sel_child = beta1,
+    bodysize_sel_adult = 0,
+    cancer_sel = beta3,
+    interaction_sel = beta4,
+    phi_track = phi_track
+  )
+  
+  # Reconstruct selection liability (without logistic transform)
+  L <- beta1 * scale(dat$bodysize_child) +
+       beta3 * dat$cancer +
+       beta4 * (scale(dat$bodysize_child) * dat$cancer)
+  
+  # Variance components
+  v1 <- var(beta1 * scale(dat$bodysize_child))
+  v3 <- var(beta3 * dat$cancer)
+  v4 <- var(beta4 * (scale(dat$bodysize_child) * dat$cancer))
+  v_resid <- var(L) - (v1 + v3 + v4)
+  
+  # Proportions
+  total <- v1 + v3 + v4 + v_resid
+  tibble(
+    beta1 = beta1,
+    beta3 = beta3,
+    beta4 = beta4,
+    child_prop = v1 / total,
+    cancer_prop = v3 / total,
+    interaction_prop = v4 / total,
+    residual_prop = v_resid / total
+  )
+}
+
+# ------------------------------------------------------------------------------
+# Run decomposition for all 27 parameter combinations
+# ------------------------------------------------------------------------------
+decomp_table <- expand.grid(
+  beta1 = c(0, -2, -4),
+  beta3 = c(0, -2, -4),
+  beta4 = c(0, -2, -4)
+) %>%
+  pmap_dfr(~variance_decomp(n = 1e5, beta1 = ..1, beta3 = ..2, beta4 = ..3))
+
+# Look at the table
+print(decomp_table)
