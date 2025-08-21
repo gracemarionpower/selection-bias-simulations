@@ -6,7 +6,7 @@
 # Date: 30 June 2025
 # Update: 20 August 2025
 # Purpose: Assess whether selection bias can reproduce the observed protective 
-#          MR effect (OR = 0.59; log(OR) ≈ -0.527) of childhood adiposity on 
+#          MR effect (OR = 0.59; log(OR) ≈ -0.53) of childhood adiposity on 
 #          breast cancer risk, assuming no true causal effect.
 # ------------------------------------------------------------------------------
 
