@@ -3,7 +3,7 @@
 # Title: Selection bias simulations
 #        Childhood body size and breast cancer risk
 # Authors: Grace M. Power, Gibran Hemani
-# Date: 24 July 2025
+# Date: 30 June 2025
 # Update: 20 August 2025
 # Purpose: Assess whether selection bias can reproduce the observed protective 
 #          MR effect (OR = 0.59; log(OR) ≈ -0.527) of childhood adiposity on 
