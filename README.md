@@ -8,9 +8,9 @@ This repository contains R code to simulate and visualise how selection bias cou
 
 ## Overview
 
-We simulate correlated genetic risk scores (GRS) for childhood and adult body size and generate latent traits where adult tracks childhood (ϕ_track). Selection into the analysed sample depends on:
+We simulate correlated genetic risk scores (GRS) for childhood and adult body size and generate latent traits where adult tracks childhood. Selection into the analysed sample depends on:
 
-- mean-centered childhood body-size category (0/1/2),
+- childhood body-size category (0/1/2),
 - breast cancer status,
 - their interaction (child × cancer).
 
@@ -38,10 +38,10 @@ Estimation uses a **2SRI (control-function) logistic model**:
 ## Outputs
 
 1. **Main plot:** mean log(OR) across replicates for both effects  
-   - **Child effect** (solid) and **Adult effect** (short-dashed)  
+   - **Child effect** (solid) and **Adult effect** (dashed)  
    - Error bars: mean ± 1.96×SD across replicates  
-   - Faceted by interaction selection; colour encodes cancer selection  
-   - Red dashed reference at the observed MR log(OR) (label shown once)
+   - Faceted by interaction selection; colour indicates cancer selection  
+   - Red dashed reference at the observed MR log(OR)
 
 2. **Selection R² decomposition table** (Shapley-averaged McFadden R²)  
    - Shares attributed to: child term, cancer term, child×cancer interaction  
