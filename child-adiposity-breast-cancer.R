@@ -2,15 +2,17 @@
 # Title: Selection bias simulations
 #        Childhood body size and breast cancer risk
 # Authors: Grace M. Power, Gibran Hemani
-# Date: 29 August 2025
+# Date: 4 September 2025
 # Purpose: Assess whether selection bias can reproduce the observed protective 
-#          MR effect (OR = 0.59; log(OR) ≈ -0.527) of childhood adiposity on 
+#          MR effect (OR = 0.59; log(OR) ≈ -0.53) of childhood adiposity on 
 #          breast cancer risk, assuming no true causal effect.
 # ------------------------------------------------------------------------------
 
 rm(list = ls())
 
-# Load required libraries
+setwd("/Users/sd20930/Library/CloudStorage/OneDrive-UniversityofBristol/2. Projects at submission stage/Applied_GWAS_BMI_BC/Manuscript/Simulation paper")
+
+# -- libraries
 library(dplyr)
 library(mvtnorm)
 library(ggplot2)
@@ -18,75 +20,45 @@ library(purrr)
 library(tibble)
 library(MASS)
 library(grid)
+library(tidyr)
+library(stringr)
 
-# ------------------------------------------------------------------------------
-# Combined data-generating model: additive + interaction selection
-# ------------------------------------------------------------------------------
-
-# Data-generating model
-#   - GRS correlation rg
-#   - Adult body size "tracks" childhood (phi_track)
-#   - Selection acts on centered categories (0/1/2 mean-centered), not latents
+# -- data-generating model
 dgm_combined <- function(
     n, rg, cancer_prev,
     bodysize_sel_child, bodysize_sel_adult, cancer_sel, interaction_sel,
     phi_track = 0.35,
     h2_child = 0.10, h2_adult_target = 0.10
 ) {
-  # Correlated GRSs
-  prs <- MASS::mvrnorm(n, mu = c(0, 0), Sigma = matrix(c(1, rg, rg, 1), 2))
-  
-  # Build latents
+  grs <- MASS::mvrnorm(n, mu = c(0, 0), Sigma = matrix(c(1, rg, rg, 1), 2))
   beta_child   <- sqrt(h2_child)
   sd_child_eps <- sqrt(1 - h2_child)
   beta_adult   <- sqrt(h2_adult_target * (1 + phi_track^2))
   sd_adult_eps <- sqrt(1 - beta_adult^2)
-  
-  child_latent_raw <- prs[,1] * beta_child + rnorm(n, sd = sd_child_eps)
-  adult_noise      <- prs[,2] * beta_adult + rnorm(n, sd = sd_adult_eps)
+  child_latent_raw <- grs[,1] * beta_child + rnorm(n, sd = sd_child_eps)
+  adult_noise      <- grs[,2] * beta_adult + rnorm(n, sd = sd_adult_eps)
   adult_latent_raw <- phi_track * child_latent_raw + adult_noise
-  
-  # Standardise so UKB cutpoints work
   child_latent <- as.numeric(scale(child_latent_raw))
   adult_latent <- as.numeric(scale(adult_latent_raw))
-  
-  # Outcome (population prevalence)
   cancer <- rbinom(n, 1, cancer_prev)
-  
-  # UK Biobank empirical proportions:
-  # thinner  = 174048 / 522653 ≈ 0.333
-  # plumper  =  83032 / 522653 ≈ 0.159
-  # average  = 265573 / 522653 ≈ 0.508
-  # Cutoffs: P(thinner) = 0.333 → 33.3rd percentile
-  #          P(plumper) = 1 - 0.159 = 0.841 → 84.1st percentile
-  #
-  # UK Biobank empirical proportions:
-  # thinner ≈ 0.333, average ≈ 0.508, plumper ≈ 0.159
   cut_child <- quantile(child_latent, probs = c(0.333, 0.841))
   cut_adult <- quantile(adult_latent, probs = c(0.333, 0.841))
-  
-  # Return numeric 0/1/2 (0 = thinner, 1 = average, 2 = plumper)
   bodysize_child <- cut(child_latent, breaks = c(-Inf, cut_child[1], cut_child[2], Inf),
                         labels = FALSE, right = TRUE) - 1
   bodysize_adult <- cut(adult_latent, breaks = c(-Inf, cut_adult[1], cut_adult[2], Inf),
                         labels = FALSE, right = TRUE) - 1
-  
-  # Selection on mean-centered categories (0/1/2 centered)
   child_c <- scale(as.numeric(bodysize_child), center = TRUE, scale = FALSE)
   adult_c <- scale(as.numeric(bodysize_adult), center = TRUE, scale = FALSE)
-  
   selection_liability <-
-    child_c  * bodysize_sel_child +   # 0, -0.25, -0.5 (logit per +1 cat)
-    adult_c  * bodysize_sel_adult +   # set to 0 in the grid
-    cancer   * cancer_sel +           # 0, -0.25, -0.5 (logit per +1 cat)
-    (child_c * cancer) * interaction_sel   # 0, -0.25, -0.5 (logit per +1 cat)
-  
+    child_c  * bodysize_sel_child +
+    adult_c  * bodysize_sel_adult +
+    cancer   * cancer_sel +
+    (child_c * cancer) * interaction_sel
   selection_prob <- plogis(selection_liability)
   selection <- rbinom(n, 1, selection_prob)
-  
   tibble(
-    prs_child = prs[,1],
-    prs_adult = prs[,2],
+    grs_child = grs[,1],
+    grs_adult = grs[,2],
     bodysize_child,
     bodysize_adult,
     cancer,
@@ -94,51 +66,45 @@ dgm_combined <- function(
   )
 }
 
-# ------------------------------------------------------------------------------
-# Estimation: 2SRI logistic (returns log(OR) per +1 category in childhood size)
-# ------------------------------------------------------------------------------
+# -- 2SRI estimation (returns child & adult effects)
 estimation <- function(dat) {
   dat_selected <- dat[dat$selection == 1, ]
   if (nrow(dat_selected) < 50) return(NULL)
-  
-  # First stages (linear) for ordered 0/1/2 on both GRS
-  fs_child <- lm(bodysize_child ~ prs_child + prs_adult, data = dat_selected)
-  fs_adult <- lm(bodysize_adult ~ prs_child + prs_adult, data = dat_selected)
-  
+  fs_child <- lm(bodysize_child ~ grs_child + grs_adult, data = dat_selected)
+  fs_adult <- lm(bodysize_adult ~ grs_child + grs_adult, data = dat_selected)
   dat_selected$pred_child <- fitted(fs_child)
   dat_selected$pred_adult <- fitted(fs_adult)
   dat_selected$r_child    <- resid(fs_child)
   dat_selected$r_adult    <- resid(fs_adult)
-  
-  # Second stage: logistic with control-function residuals (2SRI)
   m2 <- glm(
     cancer ~ pred_child + pred_adult + r_child + r_adult,
     family = binomial(),
     data   = dat_selected
   )
-  
   co <- summary(m2)$coefficients
-  beta <- co["pred_child", "Estimate"]
-  se   <- co["pred_child", "Std. Error"]
-  
+  get_row <- function(name) {
+    if (name %in% rownames(co)) {
+      beta <- co[name, "Estimate"]; se <- co[name, "Std. Error"]
+      c(beta = beta, se = se, lower = beta - 1.96*se, upper = beta + 1.96*se)
+    } else c(beta = NA_real_, se = NA_real_, lower = NA_real_, upper = NA_real_)
+  }
+  ch <- get_row("pred_child"); ad <- get_row("pred_adult")
   tibble(
-    beta  = beta,              # log(OR) per +1 category
-    se    = se,
-    lower = beta - 1.96 * se,
-    upper = beta + 1.96 * se
+    term  = c("child", "adult"),
+    beta  = c(ch["beta"],  ad["beta"]),
+    se    = c(ch["se"],    ad["se"]),
+    lower = c(ch["lower"], ad["lower"]),
+    upper = c(ch["upper"], ad["upper"])
   )
 }
 
-# ------------------------------------------------------------------------------
-# Simulation wrapper
-# ------------------------------------------------------------------------------
+# -- simulation wrapper (adult selection fixed at 0)
 simulate_joint_selection <- function(child_vals, cancer_vals, interaction_vals, n = 246511) {
   grid <- expand.grid(
     bodysize_sel_child = child_vals,
     cancer_sel         = cancer_vals,
     interaction_sel    = interaction_vals
   )
-  
   results <- lapply(1:nrow(grid), function(i) {
     dat <- dgm_combined(
       n = n,
@@ -152,37 +118,29 @@ simulate_joint_selection <- function(child_vals, cancer_vals, interaction_vals, 
       h2_child           = 0.10,
       h2_adult_target    = 0.10
     )
-    
     est <- estimation(dat)
     if (is.null(est)) return(NULL)
-    
     est %>% mutate(
       bodysize_sel_child = grid$bodysize_sel_child[i],
       cancer_sel         = grid$cancer_sel[i],
       interaction_sel    = grid$interaction_sel[i]
     )
   })
-  
   bind_rows(results)
 }
 
-# ------------------------------------------------------------------------------
-# Run sims
-# ------------------------------------------------------------------------------
+# -- run simulations
 bodysize_range    <- c(0, -0.25, -0.5)
 cancer_range      <- c(0, -0.25, -0.5)
 interaction_range <- c(0, -0.25, -0.5)
 
 set.seed(1407)
 sim_results <- purrr::map_dfr(1:500, function(i) {
-  simulate_joint_selection(
-    bodysize_range, cancer_range, interaction_range, n = 246511
-  ) %>% mutate(replicate = i)
+  simulate_joint_selection(bodysize_range, cancer_range, interaction_range, n = 246511) %>%
+    mutate(replicate = i)
 })
 
-# ------------------------------------------------------------------------------
-# Labels
-# ------------------------------------------------------------------------------
+# -- label factors
 sim_results <- sim_results %>%
   mutate(
     interaction_label = factor(case_when(
@@ -202,11 +160,9 @@ sim_results <- sim_results %>%
     ), levels = c("No body size selection","Some selection favouring thin children","Strong selection favouring thin children"))
   )
 
-# ------------------------------------------------------------------------------
-# Summarise across replicates (mean logOR and 2.5–97.5% quantiles)
-# ------------------------------------------------------------------------------
+# -- summarise across replicates
 summary_results <- sim_results %>%
-  group_by(bodysize_label, cancer_label, interaction_label) %>%
+  group_by(term, bodysize_label, cancer_label, interaction_label) %>%
   summarise(
     beta  = mean(beta, na.rm = TRUE),
     lower = quantile(beta, 0.025, na.rm = TRUE),
@@ -214,12 +170,8 @@ summary_results <- sim_results %>%
     .groups = "drop"
   )
 
-
-# ------------------------------------------------------------------------------
-# Mean logOR, SD, and mean SE across replicates (by parameter cell)
-# ------------------------------------------------------------------------------
 summary_logOR <- sim_results %>%
-  group_by(bodysize_sel_child, cancer_sel, interaction_sel) %>%
+  group_by(term, bodysize_sel_child, cancer_sel, interaction_sel) %>%
   summarise(
     mean_logOR = mean(beta, na.rm = TRUE),
     sd_logOR   = sd(beta, na.rm = TRUE),
@@ -227,11 +179,8 @@ summary_logOR <- sim_results %>%
     .groups = "drop"
   )
 
-# ------------------------------------------------------------------------------
-# Plot: log(OR) per category; dashed MR line at log(0.59)
-# ------------------------------------------------------------------------------
+# -- plot (child solid; adult short-dashed; MR label once)
 mr <- log(0.59)
-
 df <- summary_logOR %>%
   mutate(
     bodysize_label = factor(bodysize_sel_child,
@@ -248,164 +197,66 @@ df <- summary_logOR %>%
                                levels = c(0, -0.25, -0.50),
                                labels = c("No interaction","Some interaction","Strong interaction")),
     env_lo = mean_logOR - 1.96 * sd_logOR,
-    env_hi = mean_logOR + 1.96 * sd_logOR
+    env_hi = mean_logOR + 1.96 * sd_logOR,
+    term_label = dplyr::recode(term, child = "Child effect", adult = "Adult effect")
   )
 
 pd <- position_dodge(width = 0.35)
-
-yr   <- range(df$env_lo, df$env_hi, mr)    # values to show
+yr   <- range(df$env_lo, df$env_hi, mr, na.rm = TRUE)
 pad  <- diff(yr) * 0.12
 ymin <- min(yr[1] - pad, mr - 0.02)
 ymax <- yr[2] + pad
-off  <- 0.03 * (ymax - ymin)               # vertical gap below the line
+off  <- 0.03 * (ymax - ymin)
 
-ggplot(df, aes(bodysize_label, mean_logOR,
-               color = cancer_label, group = cancer_label)) +
+first_facet <- levels(df$interaction_label)[1]
+mr_label_df <- data.frame(
+  interaction_label = factor(first_facet, levels = levels(df$interaction_label)),
+  x = 1, y = mr - off,
+  label = "Observed MR log(OR) \u2248 -0.53"
+)
+
+ggplot(df,
+       aes(bodysize_label, mean_logOR,
+           color = cancer_label,
+           linetype = term_label,
+           group = interaction(cancer_label, term_label))) +
   geom_errorbar(aes(ymin = env_lo, ymax = env_hi),
-                position = position_dodge(0.35), width = 0.15) +
-  geom_point(position = position_dodge(0.35), size = 2) +
-  geom_line(position = position_dodge(0.35), linewidth = 0.7) +
+                position = pd, width = 0.15, show.legend = FALSE) +
+  geom_point(position = pd, size = 2, show.legend = FALSE) +
+  geom_line(position = pd, linewidth = 0.9, lineend = "butt", show.legend = TRUE) +
   facet_wrap(~ interaction_label) +
   geom_hline(yintercept = mr, linetype = "dashed", color = "red") +
-  annotate("text", x = 1, y = mr - off,                 # <— below the line
-           label = "Observed MR log(OR) \u2248 -0.53",
-           color = "red", size = 3, hjust = 0, vjust = 1.1) +
+  geom_text(data = mr_label_df, inherit.aes = FALSE,
+            aes(x = x, y = y, label = label),
+            color = "red", size = 3, hjust = 0, vjust = 1.1) +
   coord_cartesian(ylim = c(ymin, ymax)) +
   labs(x = "Selection on childhood body size",
        y = "Mean log(OR) across replicates",
-       color = "Breast cancer selection") +
+       color = "Breast cancer selection",
+       linetype = "Effect") +
+  scale_linetype_manual(values = c("Child effect" = "solid",
+                                   "Adult effect" = "33")) +
+  guides(
+    linetype = guide_legend(override.aes = list(shape = NA, linewidth = 1.3, lineend = "butt")),
+    color    = guide_legend(override.aes = list(linetype = "solid", linewidth = 1.2))
+  ) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 60, hjust = 1),
-        strip.text = element_text(face = "bold"))
+        strip.text = element_text(face = "bold"),
+        legend.key.width = grid::unit(2, "cm"))
 
 
 
+# ==== R² decomposition + final table  ====
 
-# ================================================================
-# Selection R² decomposition (McFadden, Shapley-averaged)
-# Uses  existing: dgm_combined(), summary_logOR
-# Produces: r2_selection_table
-# ================================================================
-
-# --- libs (namespace dplyr verbs to avoid MASS::select masking) ---
-suppressWarnings(suppressMessages({
-  library(dplyr)
-  library(purrr)
-  library(tibble)
-}))
-
-# ---------------------------
-# Helper 1: simulate selection
-# ---------------------------
-.gen_selection_data <- function(
-    n, bodysize_sel_child, cancer_sel, interaction_sel,
-    rg = 0.67, cancer_prev = 1/7,
-    phi_track = 0.35, h2_child = 0.10, h2_adult_target = 0.10
-) {
-  dat <- dgm_combined(
-    n = n, rg = rg, cancer_prev = cancer_prev,
-    bodysize_sel_child = bodysize_sel_child,
-    bodysize_sel_adult = 0,
-    cancer_sel = cancer_sel,
-    interaction_sel = interaction_sel,
-    phi_track = phi_track, h2_child = h2_child, h2_adult_target = h2_adult_target
-  )
-  # centered child body-size score used in selection
-  dat$child_c <- as.numeric(scale(as.numeric(dat$bodysize_child), center = TRUE, scale = FALSE))
-  dat
-}
-
-# ------------------------------------------------------------
-# Helper 2: Shapley shares using McFadden R² (safe caching)
-# ------------------------------------------------------------
-.shapley_mcfadden <- function(dat) {
-  terms <- c("child_c","cancer","child_c:cancer")
-  
-  # tiny cache for log-likelihoods (list; explicit key for null)
-  ll_cache <- list()
-  fit_ll <- function(v) {
-    if (length(v) == 0) {
-      k <- "<NULL>"
-      if (!is.null(ll_cache[[k]])) return(ll_cache[[k]])
-      fit <- glm(selection ~ 1, family = binomial(), data = dat)
-      ll  <- as.numeric(logLik(fit))
-      ll_cache[[k]] <- ll
-      return(ll)
-    } else {
-      k <- paste(sort(v), collapse = "+")
-      if (!is.null(ll_cache[[k]])) return(ll_cache[[k]])
-      fit <- glm(reformulate(v, response = "selection"), family = binomial(), data = dat)
-      ll  <- as.numeric(logLik(fit))
-      ll_cache[[k]] <- ll
-      return(ll)
-    }
-  }
-  
-  ll_null <- fit_ll(character(0))
-  ll_full <- fit_ll(terms)
-  denom   <- ll_full - ll_null
-  
-  # if selection has no variation or degenerate fit
-  if (!is.finite(denom) || denom <= 0) {
-    return(tibble(
-      R2_total   = NA_real_,
-      share_child= NA_real_,
-      share_cancer=NA_real_,
-      share_inter= NA_real_
-    ))
-  }
-  
-  # all 3! term orders
-  orders <- list(
-    c("child_c","cancer","child_c:cancer"),
-    c("child_c","child_c:cancer","cancer"),
-    c("cancer","child_c","child_c:cancer"),
-    c("cancer","child_c:cancer","child_c"),
-    c("child_c:cancer","child_c","cancer"),
-    c("child_c:cancer","cancer","child_c")
-  )
-  
-  contribs <- lapply(orders, function(ord) {
-    base <- character(0)
-    contrib <- setNames(c(0,0,0), terms)
-    for (t in ord) {
-      ll_base <- fit_ll(base)
-      ll_add  <- fit_ll(c(base, t))
-      dR2 <- (ll_add - ll_base) / denom
-      if (!is.finite(dR2) || dR2 < 0) dR2 <- 0   # clamp numerical wiggles
-      contrib[t] <- contrib[t] + dR2
-      base <- c(base, t)
-    }
-    contrib
-  })
-  
-  avg <- Reduce(`+`, contribs) / length(contribs)
-  tot_R2 <- 1 - (ll_full / ll_null)  # McFadden's R² overall
-  
-  tibble(
-    R2_total    = as.numeric(tot_R2),
-    share_child = as.numeric(avg["child_c"]),
-    share_cancer= as.numeric(avg["cancer"]),
-    share_inter = as.numeric(avg["child_c:cancer"])
-  )
-}
-
-# ----------------------------------------
-# Build grid from summary_logOR object
-# ----------------------------------------
-if (!exists("summary_logOR")) {
-  stop("summary_logOR not found. Run simulation code first so summary_logOR exists.")
-}
-
+# Build parameter grid from simulation summary
 grid_cells <- summary_logOR %>%
   dplyr::select(bodysize_sel_child, cancer_sel, interaction_sel) %>%
   dplyr::distinct()
 
-# ----------------------------------------
 # Compute per-parameter-cell Shapley R² shares
-# ----------------------------------------
 set.seed(20250901)
-n_for_r2 <- 246511  # per your note
+n_for_r2 <- 246511
 
 r2_raw <- grid_cells %>%
   dplyr::mutate(row_id = dplyr::row_number()) %>%
@@ -418,22 +269,16 @@ r2_raw <- grid_cells %>%
       cancer_sel         = row$cancer_sel,
       interaction_sel    = row$interaction_sel
     )
-    
-    # if selection has no variance (rare), return NA row
     if (length(unique(dat$selection)) < 2) {
-      return(tibble(
+      return(tibble::tibble(
         bodysize_sel_child = row$bodysize_sel_child,
         cancer_sel         = row$cancer_sel,
         interaction_sel    = row$interaction_sel,
-        R2_total   = NA_real_,
-        share_child= NA_real_,
-        share_cancer=NA_real_,
-        share_inter= NA_real_
+        R2_total = NA_real_, share_child = NA_real_, share_cancer = NA_real_, share_inter = NA_real_
       ))
     }
-    
     out <- .shapley_mcfadden(dat)
-    tibble(
+    tibble::tibble(
       bodysize_sel_child = row$bodysize_sel_child,
       cancer_sel         = row$cancer_sel,
       interaction_sel    = row$interaction_sel,
@@ -444,13 +289,11 @@ r2_raw <- grid_cells %>%
     )
   })
 
-# ----------------------------------------
-# Format
-# ----------------------------------------
+# Format R² table (percent strings for display)
 fmt_pct <- function(x) ifelse(is.na(x), NA_character_, paste0(round(100 * x), "%"))
 
 r2_selection_table <- r2_raw %>%
-  mutate(
+  dplyr::mutate(
     `β1 - child body size selection` = bodysize_sel_child,
     `β3 - breast cancer selection`   = cancer_sel,
     `β4 - interaction selection`     = interaction_sel,
@@ -458,8 +301,7 @@ r2_selection_table <- r2_raw %>%
     `R² of selection - breast cancer`   = fmt_pct(share_cancer),
     `R² of selection - interaction`     = fmt_pct(share_inter)
   ) %>%
-  # all-zero selection betas → R² columns should be NA (to match your example)
-  mutate(across(
+  dplyr::mutate(across(
     c(`R² of selection - child body size`,
       `R² of selection - breast cancer`,
       `R² of selection - interaction`),
@@ -475,9 +317,52 @@ r2_selection_table <- r2_raw %>%
     `β4 - interaction selection`,
     `R² of selection - interaction`
   ) %>%
-  arrange(`β1 - child body size selection`,
-          `β3 - breast cancer selection`,
-          `β4 - interaction selection`)
+  dplyr::arrange(`β1 - child body size selection`,
+                 `β3 - breast cancer selection`,
+                 `β4 - interaction selection`)
 
-# show table
-r2_selection_table
+# Numeric version for merging
+r2_prepared <- r2_selection_table %>%
+  dplyr::transmute(
+    bodysize_sel_child = as.numeric(`β1 - child body size selection`),
+    cancer_sel         = as.numeric(`β3 - breast cancer selection`),
+    interaction_sel    = as.numeric(`β4 - interaction selection`),
+    R2_child       = as.numeric(stringr::str_remove(`R² of selection - child body size`, "%")),
+    R2_cancer      = as.numeric(stringr::str_remove(`R² of selection - breast cancer`, "%")),
+    R2_interaction = as.numeric(stringr::str_remove(`R² of selection - interaction`, "%"))
+  )
+
+# Child & adult estimates side-by-side from simulation summary
+effects_wide <- df %>%
+  dplyr::select(bodysize_sel_child, cancer_sel, interaction_sel, term,
+                mean_logOR, sd_logOR, mean_SE) %>%
+  dplyr::mutate(term = dplyr::recode(term, child = "Child", adult = "Adult")) %>%
+  tidyr::pivot_wider(
+    names_from  = term,
+    values_from = c(mean_logOR, sd_logOR, mean_SE),
+    names_glue  = "{.value} ({term})"
+  )
+
+# Final table for manuscript
+final_table <- effects_wide %>%
+  dplyr::left_join(r2_prepared, by = c("bodysize_sel_child","cancer_sel","interaction_sel")) %>%
+  dplyr::transmute(
+    `β1 - child body size selection`      = bodysize_sel_child,
+    `R² of selection - child body size %` = ifelse(is.na(R2_child), NA, paste0(R2_child, "%")),
+    `β3 - breast cancer selection`        = cancer_sel,
+    `R² of selection - breast cancer %`   = ifelse(is.na(R2_cancer), NA, paste0(R2_cancer, "%")),
+    `β4 - interaction selection`          = interaction_sel,
+    `R² of selection - interaction %`     = ifelse(is.na(R2_interaction), NA, paste0(R2_interaction, "%")),
+    `Mean logOR (Child)` = round(`mean_logOR (Child)`, 3),
+    `SD logOR (Child)`   = round(`sd_logOR (Child)`, 3),
+    `Mean SE (Child)`    = round(`mean_SE (Child)`, 3),
+    `Mean logOR (Adult)` = round(`mean_logOR (Adult)`, 3),
+    `SD logOR (Adult)`   = round(`sd_logOR (Adult)`, 3),
+    `Mean SE (Adult)`    = round(`mean_SE (Adult)`, 3)
+  ) %>%
+  dplyr::arrange(`β1 - child body size selection`,
+                 `β3 - breast cancer selection`,
+                 `β4 - interaction selection`)
+
+final_table
+
