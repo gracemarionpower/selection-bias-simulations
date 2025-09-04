@@ -37,7 +37,7 @@ Estimation uses a **2SRI (control-function) logistic model**:
 ## Outputs
 
 1. **Main plot:** mean log(OR) across replicates for both effects  
-   - **Child effect** (solid) and **Adult effect** (dashed)  
+   - **Child effect (solid) and Adult effect (dashed)**  
    - Error bars: mean ± 1.96×SD across replicates  
    - Faceted by interaction selection; colour indicates cancer selection  
    - Red dashed reference at the observed MR log(OR)
@@ -46,8 +46,8 @@ Estimation uses a **2SRI (control-function) logistic model**:
    - Shares attributed to: child term, cancer term, child×cancer interaction  
    - Adult selection fixed at 0, so R² shares do not depend on adult.
 
-3. **Final table** merging **R² shares** with **child & adult estimates**  
-   - Per parameter cell: `Mean logOR`, `SD logOR`, `Mean SE` for **Child** and **Adult**, plus three R² percentages.
+3. **Final table merging R² shares with child & adult estimates**  
+   - Per parameter cell: `Mean logOR`, `SD logOR`, `Mean SE` for Child and Adult, plus three R² percentages.
 
 ---
 
