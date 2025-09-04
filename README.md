@@ -14,7 +14,7 @@ We simulate correlated genetic risk scores (GRS) for childhood and adult body si
 - breast cancer status,
 - their interaction (child × cancer).
 
-> By default, adult body size is *not* directly selected on** (adult selection coefficient = 0), but we still estimate and report an adult effect. Selection on child (and the interaction) plus tracking can induce associations with adult in the selected sample.
+> By default, adult body size is *not* directly selected on (adult selection coefficient = 0), but we still estimate and report an adult effect. Selection on child (and the interaction) plus tracking can induce associations with adult in the selected sample.
 
 Estimation uses a **2SRI (control-function) logistic model**:
 1) First-stage linear models of ordered body-size categories on both GRS.  
