@@ -31,7 +31,6 @@ Estimation uses a **2SRI (control-function) logistic model**:
 - **Replicates:** 500 (configurable)
 - **Per-replicate N:** 246,511
 - **Key parameters:** `rg = 0.67`, `cancer_prev = 1/7`, `ϕ_track = 0.35`, `h2_child = 0.10`, `h2_adult_target = 0.10`
-- **Seeds:** sims `set.seed(1407)`, R² block `set.seed(20250901)`
 
 ---
 
