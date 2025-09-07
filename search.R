@@ -244,28 +244,121 @@ results <- future_pmap(gr, function(...) {
   bind_rows()
 
 
-
-
-
+saveRDS(results, file="results.rds")
 dim(results)
-str(results)
-head(results)
-table(results$total_overlap > 0.20)
-
-subset(results, total_overlap > 0.20)
 
 
-x <- rnorm(10000)
-l <- 0.5 + 0.4 * x
-cc <- rbinom(10000, 1, plogis(l))
-mean(plogis(l))
+results <- readRDS("results.rds")
+prob_same <- function(b1, b2, se1, se2) {
+  diff <- b1 - b2
+  se_diff <- sqrt(se1^2 + se2^2)
+  pval <- 2 * pnorm(-abs(diff / se_diff))
+  pval
+}
 
-mean(cc)
-glm(cc ~ x, family=binomial())
+results <- results %>%
+  rowwise() %>%
+  mutate(
+    p_same = prob_same(beta_target, beta_est, se_target, se_est)
+  )
 
 
+results_sum <- group_by(results, sim_id) %>%
+  summarise(
+    n = n(),
+    total_overlap = sum(overlap),
+    any_overlap = as.numeric(any(overlap == 1)),
+    prob_het = prod(Qpval),
+    mean_het = mean(Qpval),
+    p_same = prod(p_same),
+    interaction_child_sel = first(interaction_child_sel),
+    interaction_adult_sel = first(interaction_adult_sel),
+    interaction_child_adult_sel = first(interaction_child_adult_sel)
+)
 
+prop.table(table(results_sum$total_overlap))
+plot(1:10)
 
+summary(results_sum$prob_het)
+
+table(results_sum$prob_het > 0.1)
+table(results_sum$p_same > 0.1) %>% prop.table() %>% {. * 100}
+
+a <- subset(results_sum, p_same > 0.1)
+b <- subset(results, sim_id %in% a$sim_id) %>% ungroup() %>% dplyr::select(contains("_sel"), b_adult, beta_target, beta_est, timepoint, model, p_same, lower_target, upper_target, lower_est, upper_est, sim_id)
+
+summary(b)
+
+a <- subset(results_sum, p_same > 0.1 & interaction_child_adult_sel == 0)
+b <- subset(results, sim_id %in% a$sim_id) %>% ungroup() %>% dplyr::select(contains("_sel"), b_adult, beta_target, beta_est, timepoint, model, p_same, lower_target, upper_target, lower_est, upper_est, sim_id)
+
+summary(b)
+
+## Upset plot
+
+library(UpSetR)
+
+temp <- subset(results, overlap == 1) %>%
+  mutate(name = paste0(timepoint, "_", model)) 
+
+l <- list(
+  child_multivariable = subset(temp, name == "child_multivariable")$sim_id %>% unique(),
+  adult_multivariable = subset(temp, name == "adult_multivariable")$sim_id %>% unique(),
+  child_univariable = subset(temp, name == "child_univariable")$sim_id %>% unique(),
+  adult_univariable = subset(temp, name == "adult_univariable")$sim_id %>% unique()
+)
+
+pdf("upset_plot.pdf", width=6, height=4)
+upset(fromList(l), order.by = "freq")
+dev.off()
+
+all4 <- Reduce(intersect, l)
+length(all4)/nrow(results_sum) * 100
+
+all4_res <- subset(results_sum, sim_id %in% all4)
+all4_res %>% summary()
+
+pdf("all4_params.pdf", width=8, height=6)
+par(mfrow=c(2,2))
+hist(all4_res$interaction_child_sel, main="Child body size selection", xlab="Log-odds per +1 category")
+hist(all4_res$interaction_adult_sel, main="Adult body size selection", xlab="Log-odds per +1 category")
+hist(all4_res$interaction_child_adult_sel, main="Child x Adult interaction selection", xlab="Log-odds per +1 category")
+dev.off()
+
+a <- subset(results_sum, p_same > 0.1)
+b <- subset(results, sim_id %in% a$sim_id) %>% ungroup() %>% dplyr::select(contains("_sel"), b_adult, beta_target, beta_est, timepoint, model, p_same, lower_target, upper_target, lower_est, upper_est, sim_id)
+b <- subset(b, !duplicated(sim_id))
+
+summary(b)
+
+pdf("all_params.pdf", width=8, height=8)
+par(mfrow=c(3,2))
+hist(b$bodysize_sel_child, main="Child body size selection", xlab="Log-odds per +1 category", xlim=c(-0.6, 0))
+hist(b$bodysize_sel_adult, main="Adult body size selection", xlab="Log-odds per +1 category", xlim=c(-0.6, 0))
+hist(b$cancer_sel, main="Cancer selection", xlab="Log-odds per +1 category", xlim=c(-0.6, 0))
+hist(b$interaction_child_sel, main="Child body size x Cancer interaction selection", xlab="Log-odds per +1 category", xlim=c(-0.6, 0))
+hist(b$interaction_adult_sel, main="Adult body size x Cancer interaction selection", xlab="Log-odds per +1 category", xlim=c(-0.6, 0))
+hist(b$interaction_child_adult_sel, main="Child x Adult body size x Cancer interaction selection", xlab="Log-odds per +1 category", xlim=c(-0.6, 0))
+dev.off()
+
+table(results$p_same > 0.1) %>% prop.table() %>% {. * 100}
+
+temp <- subset(results, p_same > 0.05) %>%
+  mutate(name = paste0(timepoint, "_", model)) 
+
+l <- list(
+  child_multivariable = subset(temp, name == "child_multivariable")$sim_id %>% unique(),
+  adult_multivariable = subset(temp, name == "adult_multivariable")$sim_id %>% unique(),
+  child_univariable = subset(temp, name == "child_univariable")$sim_id %>% unique(),
+  adult_univariable = subset(temp, name == "adult_univariable")$sim_id %>% unique()
+)
+
+pdf("upset_plot_prob.pdf", width=6, height=4)
+upset(fromList(l), order.by = "freq")
+dev.off()
+
+all4_prob <- Reduce(intersect, l)
+length(all4_prob)/nrow(results_sum) * 100
 
 
 ## Test
