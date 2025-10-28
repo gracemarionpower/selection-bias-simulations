@@ -247,122 +247,25 @@ ggplot(df,
 
 
 
-# ==== R² decomposition + final table  ====
-
-# Build parameter grid from simulation summary
-grid_cells <- summary_logOR %>%
-  dplyr::select(bodysize_sel_child, cancer_sel, interaction_sel) %>%
-  dplyr::distinct()
-
-# Compute per-parameter-cell Shapley R² shares
-set.seed(20250901)
-n_for_r2 <- 246511
-
-r2_raw <- grid_cells %>%
-  dplyr::mutate(row_id = dplyr::row_number()) %>%
-  split(.$row_id) %>%
-  purrr::map_dfr(function(row) {
-    row <- as.list(row)
-    dat <- .gen_selection_data(
-      n = n_for_r2,
-      bodysize_sel_child = row$bodysize_sel_child,
-      cancer_sel         = row$cancer_sel,
-      interaction_sel    = row$interaction_sel
-    )
-    if (length(unique(dat$selection)) < 2) {
-      return(tibble::tibble(
-        bodysize_sel_child = row$bodysize_sel_child,
-        cancer_sel         = row$cancer_sel,
-        interaction_sel    = row$interaction_sel,
-        R2_total = NA_real_, share_child = NA_real_, share_cancer = NA_real_, share_inter = NA_real_
-      ))
-    }
-    out <- .shapley_mcfadden(dat)
-    tibble::tibble(
-      bodysize_sel_child = row$bodysize_sel_child,
-      cancer_sel         = row$cancer_sel,
-      interaction_sel    = row$interaction_sel,
-      R2_total    = out$R2_total,
-      share_child = out$share_child,
-      share_cancer= out$share_cancer,
-      share_inter = out$share_inter
-    )
-  })
-
-# Format R² table (percent strings for display)
-fmt_pct <- function(x) ifelse(is.na(x), NA_character_, paste0(round(100 * x), "%"))
-
-r2_selection_table <- r2_raw %>%
-  dplyr::mutate(
+# Final table for manuscript (no R² columns)
+final_table <- effects_wide %>%
+  dplyr::transmute(
     `β1 - child body size selection` = bodysize_sel_child,
     `β3 - breast cancer selection`   = cancer_sel,
     `β4 - interaction selection`     = interaction_sel,
-    `R² of selection - child body size` = fmt_pct(share_child),
-    `R² of selection - breast cancer`   = fmt_pct(share_cancer),
-    `R² of selection - interaction`     = fmt_pct(share_inter)
+    `Mean logOR (Child)`             = round(`mean_logOR (Child)`, 3),
+    `SD logOR (Child)`               = round(`sd_logOR (Child)`, 3),
+    `Mean SE (Child)`                = round(`mean_SE (Child)`, 3),
+    `Mean logOR (Adult)`             = round(`mean_logOR (Adult)`, 3),
+    `SD logOR (Adult)`               = round(`sd_logOR (Adult)`, 3),
+    `Mean SE (Adult)`                = round(`mean_SE (Adult)`, 3)
   ) %>%
-  dplyr::mutate(across(
-    c(`R² of selection - child body size`,
-      `R² of selection - breast cancer`,
-      `R² of selection - interaction`),
-    ~ ifelse(`β1 - child body size selection` == 0 &
-               `β3 - breast cancer selection`   == 0 &
-               `β4 - interaction selection`     == 0, NA, .)
-  )) %>%
-  dplyr::select(
+  dplyr::arrange(
     `β1 - child body size selection`,
-    `R² of selection - child body size`,
     `β3 - breast cancer selection`,
-    `R² of selection - breast cancer`,
-    `β4 - interaction selection`,
-    `R² of selection - interaction`
-  ) %>%
-  dplyr::arrange(`β1 - child body size selection`,
-                 `β3 - breast cancer selection`,
-                 `β4 - interaction selection`)
-
-# Numeric version for merging
-r2_prepared <- r2_selection_table %>%
-  dplyr::transmute(
-    bodysize_sel_child = as.numeric(`β1 - child body size selection`),
-    cancer_sel         = as.numeric(`β3 - breast cancer selection`),
-    interaction_sel    = as.numeric(`β4 - interaction selection`),
-    R2_child       = as.numeric(stringr::str_remove(`R² of selection - child body size`, "%")),
-    R2_cancer      = as.numeric(stringr::str_remove(`R² of selection - breast cancer`, "%")),
-    R2_interaction = as.numeric(stringr::str_remove(`R² of selection - interaction`, "%"))
+    `β4 - interaction selection`
   )
-
-# Child & adult estimates side-by-side from simulation summary
-effects_wide <- df %>%
-  dplyr::select(bodysize_sel_child, cancer_sel, interaction_sel, term,
-                mean_logOR, sd_logOR, mean_SE) %>%
-  dplyr::mutate(term = dplyr::recode(term, child = "Child", adult = "Adult")) %>%
-  tidyr::pivot_wider(
-    names_from  = term,
-    values_from = c(mean_logOR, sd_logOR, mean_SE),
-    names_glue  = "{.value} ({term})"
-  )
-
-# Final table for manuscript
-final_table <- effects_wide %>%
-  dplyr::left_join(r2_prepared, by = c("bodysize_sel_child","cancer_sel","interaction_sel")) %>%
-  dplyr::transmute(
-    `β1 - child body size selection`      = bodysize_sel_child,
-    `R² of selection - child body size %` = ifelse(is.na(R2_child), NA, paste0(R2_child, "%")),
-    `β3 - breast cancer selection`        = cancer_sel,
-    `R² of selection - breast cancer %`   = ifelse(is.na(R2_cancer), NA, paste0(R2_cancer, "%")),
-    `β4 - interaction selection`          = interaction_sel,
-    `R² of selection - interaction %`     = ifelse(is.na(R2_interaction), NA, paste0(R2_interaction, "%")),
-    `Mean logOR (Child)` = round(`mean_logOR (Child)`, 3),
-    `SD logOR (Child)`   = round(`sd_logOR (Child)`, 3),
-    `Mean SE (Child)`    = round(`mean_SE (Child)`, 3),
-    `Mean logOR (Adult)` = round(`mean_logOR (Adult)`, 3),
-    `SD logOR (Adult)`   = round(`sd_logOR (Adult)`, 3),
-    `Mean SE (Adult)`    = round(`mean_SE (Adult)`, 3)
-  ) %>%
-  dplyr::arrange(`β1 - child body size selection`,
-                 `β3 - breast cancer selection`,
-                 `β4 - interaction selection`)
 
 final_table
+
 
