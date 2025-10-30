@@ -1,11 +1,10 @@
 # ------------------------------------------------------------------------------
 # Title: Sensitivity sims with a common confounder U
 #        Childhood body size and breast cancer risk
-# Authors: (you)
-# Date:    (today)
+# Author: Grace M. Power
+# Date:   30 Oct 2025
 # Purpose: Add U -> {X1, X2, Y} so that conditioning on S can open
 #          Z1 -> X1 <- U -> Y in addition to Z1 -> X1 -> S <- Y
-# Notes:   No true causal effect of X1/X2 on Y. Instruments affect X1/X2 only.
 # ------------------------------------------------------------------------------
 
 rm(list = ls())
