@@ -269,10 +269,3 @@ pU <- ggplot(dfU,
 
 print(pU)
 
-# Optional: compact summary table
-final_table_U <- dfU %>%
-  select(term_label, bodysize_label, cancer_label, interaction_label, confounding_label,
-         mean_logOR, sd_logOR, mean_SE) %>%
-  arrange(confounding_label, interaction_label, cancer_label, bodysize_label, term_label)
-
-final_table_U
