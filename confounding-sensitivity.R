@@ -255,7 +255,7 @@ pU <- ggplot(dfU,
        y = "Mean log(OR) across replicates",
        color = "Breast cancer selection",
        linetype = "Effect",
-       title = "Effect estimates after conditioning on S with/without confounding U") +
+       title = " ") +
   scale_linetype_manual(values = c("Child effect" = "solid",
                                    "Adult effect" = "33")) +
   guides(
