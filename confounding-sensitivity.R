@@ -188,7 +188,9 @@ sim_results_U <- purrr::map_dfr(1:300, function(i) {
 })
 
 # ----------------------- Summaries and plotting objects -----------------------
+
 summary_logOR_U <- sim_results_U %>%
+  filter(confounding_label %in% c("mild","strong")) %>%     # <<< keep only mild/strong
   group_by(term, bodysize_sel_child, cancer_sel, interaction_sel, confounding_label) %>%
   summarise(
     mean_logOR = mean(beta, na.rm = TRUE),
@@ -197,26 +199,45 @@ summary_logOR_U <- sim_results_U %>%
     .groups = "drop"
   )
 
-mr <- log(0.59)
-
-dfU <- summary_logOR_U %>%
+# nice, ordered table to print/save
+table_U <- summary_logOR_U %>%
   mutate(
-    bodysize_label = factor(bodysize_sel_child,
-                            levels = c(0, -0.25, -0.50),
+    confounding_label = factor(confounding_label, levels = c("mild","strong"),
+                               labels = c("Mild confounding","Strong confounding")),
+    term_label = dplyr::recode(term, child = "Child effect", adult = "Adult effect"),
+    bodysize_label = factor(bodysize_sel_child, levels = c(0, -0.25, -0.50),
                             labels = c("No body size selection",
                                        "Some selection favouring thin children",
                                        "Strong selection favouring thin children")),
-    cancer_label = factor(cancer_sel,
-                          levels = c(0, -0.25, -0.50),
+    cancer_label = factor(cancer_sel, levels = c(0, -0.25, -0.50),
                           labels = c("No cancer selection",
                                      "Some cancer under-selection",
                                      "Strong cancer under-selection")),
-    interaction_label = factor(interaction_sel,
-                               levels = c(0, -0.25, -0.50),
+    interaction_label = factor(interaction_sel, levels = c(0, -0.25, -0.50),
+                               labels = c("No interaction","Some interaction","Strong interaction"))
+  ) %>%
+  arrange(confounding_label, interaction_label, cancer_label, bodysize_label, term_label)
+
+print(table_U)
+
+# ----------------------- plot -----------------------
+
+mr <- log(0.59)
+
+dfU <- summary_logOR_U %>%                                
+  mutate(
+    bodysize_label = factor(bodysize_sel_child, levels = c(0, -0.25, -0.50),
+                            labels = c("No body size selection",
+                                       "Some selection favouring thin children",
+                                       "Strong selection favouring thin children")),
+    cancer_label = factor(cancer_sel, levels = c(0, -0.25, -0.50),
+                          labels = c("No cancer selection",
+                                     "Some cancer under-selection",
+                                     "Strong cancer under-selection")),
+    interaction_label = factor(interaction_sel, levels = c(0, -0.25, -0.50),
                                labels = c("No interaction","Some interaction","Strong interaction")),
-    confounding_label = factor(confounding_label,
-                               levels = c("none","mild","strong"),
-                               labels = c("No confounding","Mild confounding","Strong confounding")),
+    confounding_label = factor(confounding_label, levels = c("mild","strong"),
+                               labels = c("Mild confounding","Strong confounding")),
     env_lo = mean_logOR - 1.96 * sd_logOR,
     env_hi = mean_logOR + 1.96 * sd_logOR,
     term_label = dplyr::recode(term, child = "Child effect", adult = "Adult effect")
@@ -228,13 +249,12 @@ pad <- diff(yr) * 0.12
 ymin <- min(yr[1] - pad, mr - 0.02); ymax <- yr[2] + pad
 off  <- 0.03 * (ymax - ymin)
 
-first_facet <- levels(dfU$interaction_label)[1]
-mr_label_df <- data.frame(
-  interaction_label = factor(first_facet, levels = levels(dfU$interaction_label)),
-  confounding_label = factor("Mild confounding", levels = levels(dfU$confounding_label)),
-  x = 1, y = mr - off,
-  label = "Observed MR log(OR) ≈ -0.53"
-)
+# put the MR label on the first column ("No interaction") and both rows (mild/strong)
+mr_label_df <- expand.grid(
+  interaction_label = factor("No interaction", levels = levels(dfU$interaction_label)),
+  confounding_label = factor(levels(dfU$confounding_label), levels = levels(dfU$confounding_label))
+) |>
+  transform(x = 1, y = mr - off, label = "Observed MR log(OR) ≈ -0.53")
 
 pU <- ggplot(dfU,
              aes(bodysize_label, mean_logOR,
@@ -254,8 +274,7 @@ pU <- ggplot(dfU,
   labs(x = "Selection on childhood body size",
        y = "Mean log(OR) across replicates",
        color = "Breast cancer selection",
-       linetype = "Effect",
-       title = " ") +
+       linetype = "Effect") +
   scale_linetype_manual(values = c("Child effect" = "solid",
                                    "Adult effect" = "33")) +
   guides(
