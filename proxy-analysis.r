@@ -1,7 +1,8 @@
 library(ggplot2)
 library(reshape2)
 library(dplyr)
-
+library(simulateGP)
+library(dplyr)
 
 ###########
 
@@ -63,6 +64,7 @@ make_families <- function(af, nfam) {
 
 	# Just count how many alleles are in common
 	ibs_unw <- abs(abs(sibs1 - sibs2) - 2) / 2
+
 	return(list(dads=dads, mums=mums, sibs1=sibs1, sibs2=sibs2, ibd=ibd, ibs=ibs, ibs_unw=ibs_unw))
 }
 
@@ -93,13 +95,26 @@ chooseEffects <- function(nsnp, totvar, sqrt=TRUE) {
 }
 
 make_phenotypes <- function(fam, eff_gx, eff_xy, vx, vy, mx, my) {
-	lapply(fam, function(g)
+	a <- lapply(fam, function(g)
 	{
 		u <- rnorm(nrow(g))
 		x <- makePhen(c(eff_gx), cbind(g), vy=vx, my=mx)
 		y <- makePhen(c(eff_xy), cbind(x), vy=vy, my=my)
-		return(data.frame(x=x, y=y))
+		cc <- rbinom(length(y), 1, plogis(y))		
+		return(data.frame(x=x, y=y, cc=cc))
 	})
+	names(a) <- names(fam)
+
+	# generate sibling sex
+	a$sibs1$sex <- rbinom(nrow(a$sibs1), 1, 0.5)
+	a$sibs2$sex <- rbinom(nrow(a$sibs2), 1, 0.5)
+
+	# only females can be cases
+	a$sibs1$cco <- a$sibs1$cc
+	a$sibs1$cc[a$sibs1$sex==0] <- 0
+	a$sibs2$cc[a$sibs2$sex==0] <- 0
+
+	return(a)
 }
 
 join_populations <- function(l) {
@@ -152,6 +167,21 @@ fastAssoc <- function(y, x) {
 	))
 }
 
+fastGLM <- function(cc, x) {
+	require(fastglm)
+	index <- is.finite(cc) & is.finite(x)
+	n <- sum(index)
+	cc <- cc[index]
+	x <- cbind(rep(1, n), x[index])
+	fit <- summary(fastglm(x, cc, family=binomial()))
+	return(list(
+		ahat=fit$coefficients[1,1],
+		bhat=fit$coefficients[2,1],
+		se=fit$coefficients[2,2],
+		zval=fit$coefficients[2,3],
+		pval=fit$coefficients[2,4]
+	))
+}
 
 gwas <- function(y, g) {
 	out <- matrix(0, ncol(g), 5)
@@ -165,11 +195,31 @@ gwas <- function(y, g) {
 	return(out)
 }
 
+gwasGLM <- function(cc, g) {
+	out <- matrix(0, ncol(g), 5)
+	for(i in 1:ncol(g))
+	{
+		o <- fastGLM(cc, g[,i])
+		out[i, ] <- unlist(o)
+	}
+	out <- as.data.frame(out)
+	names(out) <- names(o)
+	return(out)
+}
+
 do_mr_standard <- function(x, y, g) {
 	gwasx <- gwas(x, g)
 	gwasy <- gwas(y, g)
     ind <- gwasx$pval < 5e-8
 	out <- mr_ivw(gwasx$bhat[ind], gwasy$bhat[ind], gwasx$se[ind], gwasy$se[ind])
+	return(out)
+}
+
+do_mr_glm <- function(x, cc, g) {
+	gwasx <- gwas(x, g)
+	gwascc <- gwasGLM(cc, g)
+    ind <- gwasx$pval < 5e-8
+	out <- mr_ivw(gwasx$bhat[ind], gwascc$bhat[ind], gwasx$se[ind], gwascc$se[ind])
 	return(out)
 }
 
@@ -200,20 +250,22 @@ mr_ivw <- function(b_exp, b_out, se_exp, se_out, parameters = default_parameters
 
 
 library(parallel)
-
 nsim <- 100
 res <- mclapply(1:nsim, function(i) {
-    fam <- make_families(af=seq(0.1, 0.5, length.out=500), nfam=10000)
-    eff <- chooseEffects(500, totvar=0.4, sqrt=TRUE)
+    fam <- make_families(af=seq(0.1, 0.5, length.out=50), nfam=10000)
+    eff <- chooseEffects(50, totvar=0.4, sqrt=TRUE)
     phen <- make_phenotypes(fam, eff, -0.42, 1, 1, 0, 0)
+	ind <- which(phen$sibs1$sex == 1)
     bind_rows(
         do_mr_standard(phen$sibs1$x, phen$sibs1$y, fam$sibs1) %>% as_tibble() %>% mutate(what="self"),
-        do_mr_standard(phen$sibs1$x, phen$sibs2$y, fam$sibs1) %>% as_tibble() %>% mutate(what="sibling"),
-        do_mr_standard(phen$sibs1$x, phen$mums$y, fam$sibs1) %>% as_tibble() %>% mutate(what="mother")
+        do_mr_glm(phen$sibs1$x, phen$sibs2$cc, fam$sibs1) %>% as_tibble() %>% mutate(what="sibling"),
+        do_mr_glm(phen$sibs1$x, phen$mums$cc, fam$sibs1) %>% as_tibble() %>% mutate(what="mother")
     )
 }, mc.cores=10) %>% bind_rows()
 
 res <- res %>% mutate(source="simulated")
+
+saveRDS(res, "mr_proxy_simulation_results.rds")
 
 obs_res <- tibble(
     what = c("self", "sibling", "mother"),
@@ -223,11 +275,12 @@ obs_res <- tibble(
     se = (c((log(0.84)-log(0.66))/1.96, (log(1.14)-log(0.89))/1.96, (log(1.06)-log(0.84))/1.96))
 ) %>% mutate(source="empirical")
 obs_res
-
 ggplot(bind_rows(res, obs_res), aes(x=what, y=exp(b), color=source)) +
     geom_point(position=position_dodge(width=0.5), size=3) +
     geom_errorbar(aes(ymin=exp(lower), ymax=exp(upper)), width=0, position=position_dodge(width=0.5)) +
-    labs(x="Individual used for outcome GWAS", y="MR Estimate (log odds ratio)", colour="") +
+    labs(x="Individual used for outcome GWAS", y="MR Estimate (odds ratio)", colour="") +
     geom_hline(yintercept=1, linetype="dashed")
 ggsave("mr_proxy_analysis.pdf", width=6, height=6)
+
+
 
