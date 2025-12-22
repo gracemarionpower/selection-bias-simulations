@@ -291,9 +291,9 @@ pU <- ggplot(dfU,
     color    = guide_legend(override.aes = list(linetype = "solid", linewidth = 1.2))
   ) +
   theme_minimal() +
-  theme(axis.text.x = element_text(angle = 60, hjust = 1),
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
         strip.text = element_text(face = "bold"),
-        legend.key.width = grid::unit(2, "cm"))
-ggsave(pU, file="figures/sensitivity-plot.pdf", width = 10, height = 10)
+        legend.key.width = grid::unit(2, "cm"), legend.position = "bottom", legend.direction="vertical")
+ggsave(pU, file="sensitivity-plot.pdf", width = 10, height = 10)
 print(pU)
 
