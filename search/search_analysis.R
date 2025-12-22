@@ -78,7 +78,7 @@ l <- list(
   adult_univariable = subset(temp, name == "adult_univariable")$sim %>% unique()
 )
 
-pdf("upset_plot.pdf", width=6, height=4)
+pdf("upset_plot.pdf", width=5, height=6, onefile=FALSE)
 upset(fromList(l), order.by = "freq")
 dev.off()
 
