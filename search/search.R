@@ -9,256 +9,149 @@ library(grid)
 library(furrr)
 library(fastglm)
 
-dgm_combined <- function(
-    n, rg, cancer_prev,
-    bodysize_sel_child, bodysize_sel_adult, cancer_sel, interaction_child_sel, interaction_adult_sel, interaction_ca_sel, interaction_child_adult_sel, 
-    confounding, confounding_sel,
-    phi_track = 0.35,
-    h2_child = 0.10, h2_adult_target = 0.10, b_adult=0, b_child=0, sim_id = NA
+dgm <- function(
+  n,
+  rg,
+  cancer_prev,
+  # selection parameters (same interpretation as your main sims)
+  bodysize_sel_child, bodysize_sel_adult, cancer_sel, 
+  interaction_child_sel, interaction_adult_sel, interaction_ca_sel, interaction_child_adult_sel, confounding_sel,
+  # tracking & heritability
+  phi_track = 0.35,
+  b_adult = 0,
+  h2_child = 0.10, h2_adult_target = 0.10,
+  # NEW: confounding strengths U -> X1, U -> X2, U -> Y
+  gamma_u_x1 = 0.30,
+  gamma_u_x2 = 0.20,
+  gamma_u_y  = 0.50,
+  sim_id = 1,
+  simrep = 1
 ) {
-  # Correlated GRSs
-  prs <- MASS::mvrnorm(n, mu = c(0, 0), Sigma = matrix(c(1, rg, rg, 1), 2))
-  
-  # Build latents
+  # Instruments (GRSs)
+  grs <- MASS::mvrnorm(n, mu = c(0, 0), Sigma = matrix(c(1, rg, rg, 1), 2))
+
+  # Unobserved confounder U
+  U <- rnorm(n)
+
+  # Child & adult latent body size (add U)
   beta_child   <- sqrt(h2_child)
   sd_child_eps <- sqrt(1 - h2_child)
+
   beta_adult   <- sqrt(h2_adult_target * (1 + phi_track^2))
   sd_adult_eps <- sqrt(1 - beta_adult^2)
 
-  conf <- rnorm(n)
-  
-  child_latent_raw <- prs[,1] * beta_child + conf * confounding + rnorm(n, sd = sd_child_eps)
-  adult_noise      <- prs[,2] * beta_adult + conf * confounding + rnorm(n, sd = sd_adult_eps)
+  child_latent_raw <- grs[,1] * beta_child + gamma_u_x1 * U + rnorm(n, sd = sd_child_eps)
+  adult_noise      <- grs[,2] * beta_adult + gamma_u_x2 * U + rnorm(n, sd = sd_adult_eps)
   adult_latent_raw <- phi_track * child_latent_raw + adult_noise
-  
-  # Standardise so UKB cutpoints work
+
+  # Standardise latent scores
   child_latent <- as.numeric(scale(child_latent_raw))
   adult_latent <- as.numeric(scale(adult_latent_raw))
-  
-  
-  # UK Biobank empirical proportions:
-  # thinner  = 174048 / 522653 ≈ 0.333
-  # plumper  =  83032 / 522653 ≈ 0.159
-  # average  = 265573 / 522653 ≈ 0.508
-  # Cutoffs: P(thinner) = 0.333 → 33.3rd percentile
-  #          P(plumper) = 1 - 0.159 = 0.841 → 84.1st percentile
-  #
-  # UK Biobank empirical proportions:
-  # thinner ≈ 0.333, average ≈ 0.508, plumper ≈ 0.159
+
+  # Ordinal body size categories (as in your main sims)
   cut_child <- quantile(child_latent, probs = c(0.333, 0.841))
   cut_adult <- quantile(adult_latent, probs = c(0.333, 0.841))
-  
-  # Return numeric 0/1/2 (0 = thinner, 1 = average, 2 = plumper)
+
   bodysize_child <- cut(child_latent, breaks = c(-Inf, cut_child[1], cut_child[2], Inf),
                         labels = FALSE, right = TRUE) - 1
   bodysize_adult <- cut(adult_latent, breaks = c(-Inf, cut_adult[1], cut_adult[2], Inf),
                         labels = FALSE, right = TRUE) - 1
-  
-  # Selection on mean-centered categories (0/1/2 centered)
+
+  # Cancer depends on U only (no causal effect of X1/X2 on Y)
+  # Intercept set to hit desired prevalence approximately
+  alpha_y <- qlogis(cancer_prev)
+  p_y     <- plogis(alpha_y + gamma_u_y * U + b_adult * adult_latent)
+  cancer  <- rbinom(n, 1, p_y)
+
+  # Selection S depends on X1, X2, Y and X1×Y (same structure as your paper)
   child_c <- scale(as.numeric(bodysize_child), center = TRUE, scale = FALSE)
   adult_c <- scale(as.numeric(bodysize_adult), center = TRUE, scale = FALSE)
 
-  liability <- bodysize_child * b_child + bodysize_adult * b_adult + conf * confounding
-  
-  determine_mean <- function(prev, s) {
-    f <- function(m) {
-      mean(plogis(rnorm(10000, mean = m, sd = s))) - prev
-    }
-    uniroot(f, c(-20, 20))$root
-  }
-
-  m <- determine_mean(cancer_prev, sd(liability))
-  liability <- m + liability
-
-  # Outcome (population prevalence)
-  cancer <- rbinom(n, 1, plogis(liability))
-
   selection_liability <-
-    child_c  * bodysize_sel_child +   # 0, -0.25, -0.5 (logit per +1 cat)
-    adult_c  * bodysize_sel_adult +   # set to 0 in the grid
-    cancer   * cancer_sel +           # 0, -0.25, -0.5 (logit per +1 cat)
-    conf * confounding_sel +
+    child_c  * bodysize_sel_child +
+    adult_c  * bodysize_sel_adult +
+    cancer   * cancer_sel +
+    U * confounding_sel +
     (child_c * cancer) * interaction_child_sel +   # 0, -0.25, -0.5 (logit per +1 cat)
     (adult_c * cancer) * interaction_adult_sel +
     (adult_c * child_c) * interaction_ca_sel +
     (adult_c * child_c * cancer) * interaction_child_adult_sel
-  
+
   selection_prob <- plogis(selection_liability)
-  selection <- rbinom(n, 1, selection_prob)
-  
+  selection      <- rbinom(n, 1, selection_prob)
+
   tibble(
-    prs_child = prs[,1],
-    prs_adult = prs[,2],
-    child_latent,
-    adult_latent,
+    grs_child = grs[,1],
+    grs_adult = grs[,2],
+    U         = U,
     bodysize_child,
     bodysize_adult,
-    liability,
     cancer,
     selection
   )
 }
 
+# ------------------------------- Estimation (2SRI) ----------------------------
+# identical to your estimator; we do NOT (and cannot) adjust for U
 estimation <- function(dat) {
   dat_selected <- dat[dat$selection == 1, ]
   if (nrow(dat_selected) < 50) return(NULL)
   
-  # First stages (linear) for ordered 0/1/2 on both GRS
-  fs_child <- lm(bodysize_child ~ prs_child + prs_adult, data = dat_selected)
-  fs_adult <- lm(bodysize_adult ~ prs_child + prs_adult, data = dat_selected)
+  # First-stage regressions
+  fs_child <- lm(bodysize_child ~ grs_child + grs_adult, data = dat_selected)
+  fs_adult <- lm(bodysize_adult ~ grs_child + grs_adult, data = dat_selected)
   
   dat_selected$pred_child <- fitted(fs_child)
   dat_selected$pred_adult <- fitted(fs_adult)
   dat_selected$r_child    <- resid(fs_child)
   dat_selected$r_adult    <- resid(fs_adult)
   
-  # Second stage: logistic with control-function residuals (2SRI)
-  m2 <- glm(
-    cancer ~ pred_child + pred_adult + r_child + r_adult,
-    family = binomial(),
-    data   = dat_selected
+  # Univariable IV models
+  m_child_uni <- fastglm(
+    x = model.matrix(~ pred_child + r_child, data = dat_selected),
+    y = dat_selected$cancer,
+    family = binomial()
   )
   
-  m3 <- glm( cancer ~ pred_child + r_child, family = binomial(), data = dat_selected)
-
-  m4 <- glm( cancer ~ pred_adult + r_adult, family = binomial(), data = dat_selected)  
-
-  co <- summary(m2)$coefficients
-  beta <- co["pred_child", "Estimate"]
-  se   <- co["pred_child", "Std. Error"]
+  m_adult_uni <- fastglm(
+    x = model.matrix(~ pred_adult + r_adult, data = dat_selected),
+    y = dat_selected$cancer,
+    family = binomial()
+  )
   
-  t1 <- tibble(
-    beta  = beta,              # log(OR) per +1 category
-    se    = se,
+  # Multivariable IV model
+  m_multi <- fastglm(
+    x = model.matrix(~ pred_child + pred_adult + r_child + r_adult, data = dat_selected),
+    y = dat_selected$cancer,
+    family = binomial()
+  )
+  
+  # Extract coefficients
+  grab <- function(model, k) {
+    co <- summary(model)$coefficients
+    if (k %in% rownames(co)) c(co[k, "Estimate"], co[k, "Std. Error"]) else c(NA, NA)
+  }
+  
+  ch_uni <- grab(m_child_uni, "pred_child")
+  ad_uni <- grab(m_adult_uni, "pred_adult")
+  ch_multi <- grab(m_multi, "pred_child")
+  ad_multi <- grab(m_multi, "pred_adult")
+  
+  tibble(
+    timepoint = rep(c("child", "adult"), each = 2),
+    model     = rep(c("univariable", "multivariable"), times = 2),
+    term  = c("child_univariable", "adult_univariable", "child_multivariable", "adult_multivariable"),
+    beta  = c(ch_uni[1], ad_uni[1], ch_multi[1], ad_multi[1]),
+    se    = c(ch_uni[2], ad_uni[2], ch_multi[2], ad_multi[2]),
     lower = beta - 1.96 * se,
-    upper = beta + 1.96 * se,
-    timepoint = "child",
-    model = "multivariable"
+    upper = beta + 1.96 * se
   )
-
-  beta <- co["pred_adult", "Estimate"]
-  se   <- co["pred_adult", "Std. Error"]
-  
-  t2 <- tibble(
-    beta  = beta,              # log(OR) per +1 category
-    se    = se,
-    lower = beta - 1.96 * se,
-    upper = beta + 1.96 * se,
-    timepoint = "adult",
-    model = "multivariable"
-  )
-
-  co <- summary(m3)$coefficients
-    beta <- co["pred_child", "Estimate"]
-    se   <- co["pred_child", "Std. Error"]
-    t3 <- tibble(
-      beta  = beta,              # log(OR) per +1 category
-      se    = se,
-      lower = beta - 1.96 * se,
-      upper = beta + 1.96 * se,
-      timepoint = "child",
-      model = "univariable"
-    )
-
-  co <- summary(m4)$coefficients
-    beta <- co["pred_adult", "Estimate"]
-    se   <- co["pred_adult", "Std. Error"]
-    t4 <- tibble(
-      beta  = beta,              # log(OR) per +1 category
-      se    = se,
-      lower = beta - 1.96 * se,
-      upper = beta + 1.96 * se,
-      timepoint = "adult",
-      model = "univariable"
-    )
-
-
-  return(bind_rows(
-    t1, t2, t3, t4
-  ))
-
 }
 
-estimation2 <- function(dat) {
-  dat_selected <- dat[dat$selection == 1, ]
-  if (nrow(dat_selected) < 50) return(NULL)
-  
-  # First stages (linear) for ordered 0/1/2 on both GRS
-  fs_child <- lm(bodysize_child ~ prs_child + prs_adult, data = dat_selected)
-  fs_adult <- lm(bodysize_adult ~ prs_child + prs_adult, data = dat_selected)
-  
-  dat_selected$pred_child <- fitted(fs_child)
-  dat_selected$pred_adult <- fitted(fs_adult)
-  dat_selected$r_child    <- resid(fs_child)
-  dat_selected$r_adult    <- resid(fs_adult)
-  
-  # Second stage: logistic with control-function residuals (2SRI)
-  # Second stage: logistic with control-function residuals (2SRI)
-  X_full <- cbind(1, dat_selected$pred_child, dat_selected$pred_adult, 
-                  dat_selected$r_child, dat_selected$r_adult)
-  y <- dat_selected$cancer
-  m2 <- fastglm(x = X_full, y = y, family = binomial())
-  
-  X_full <- cbind(1, dat_selected$pred_child, dat_selected$r_child)
-  m3 <- fastglm(x = X_full, y = y, family = binomial())
-
-  X_full <- cbind(1, dat_selected$pred_adult, dat_selected$r_adult)
-  m4 <- fastglm(x = X_full, y = y, family = binomial())
-
-  co <- summary(m2)$coefficients
-  beta <- co[2, "Estimate"]
-  se   <- co[2, "Std. Error"]
-  
-  t1 <- tibble(
-    beta  = beta,              # log(OR) per +1 category
-    se    = se,
-    lower = beta - 1.96 * se,
-    upper = beta + 1.96 * se,
-    timepoint = "child",
-    model = "multivariable"
-  )
-
-  beta <- co[3, "Estimate"]
-  se   <- co[3, "Std. Error"]
-  
-  t2 <- tibble(
-    beta  = beta,              # log(OR) per +1 category
-    se    = se,
-    lower = beta - 1.96 * se,
-    upper = beta + 1.96 * se,
-    timepoint = "adult",
-    model = "multivariable"
-  )
-
-  co <- summary(m3)$coefficients
-    beta <- co[2, "Estimate"]
-    se   <- co[2, "Std. Error"]
-    t3 <- tibble(
-      beta  = beta,              # log(OR) per +1 category
-      se    = se,
-      lower = beta - 1.96 * se,
-      upper = beta + 1.96 * se,
-      timepoint = "child",
-      model = "univariable"
-    )
-
-  co <- summary(m4)$coefficients
-    beta <- co[2, "Estimate"]
-    se   <- co[2, "Std. Error"]
-    t4 <- tibble(
-      beta  = beta,              # log(OR) per +1 category
-      se    = se,
-      lower = beta - 1.96 * se,
-      upper = beta + 1.96 * se,
-      timepoint = "adult",
-      model = "univariable"
-    )
-
-
-  return(bind_rows(
-    t1, t2, t3, t4
-  ))
-
+p_overlap <- function(b1, b2, se1, se2) {
+  z_diff <- abs(b1 - b2) / sqrt(se1^2 + se2^2)
+  pval <- 2 * pnorm(-z_diff)
+  return(pval)
 }
 
 cochran_q <- function(betas, ses) {
@@ -280,11 +173,11 @@ calculate_overlap <- function(target_vals, est) {
     left_join(est, by = c("timepoint", "model"), suffix = c("_target", "_est")) %>%
     rowwise() %>%
     mutate(
-      Qpval = cochran_q(c(beta_target, beta_est), c(se_target, se_est)),
-      overlap = confint_overlap(upper_target, lower_target, upper_est, lower_est)
+      poverlap = p_overlap(beta_target, beta_est, se_target, se_est)
+      # overlap = confint_overlap(upper_target, lower_target, upper_est, lower_est)
     ) %>%
     ungroup() %>%
-    dplyr::select(timepoint, model, Qpval, overlap, everything())
+    dplyr::select(timepoint, model, poverlap, everything())
   results
 }
 
@@ -298,31 +191,32 @@ target_vals <- tibble(
 )
 
 gr <- expand.grid(
-    n = 500000,
+    n = 250000,
     rg = 0.67,
     cancer_prev = 1/7,
     phi_track = 0.35,
     h2_child = 0.10,
     h2_adult_target = 0.10,
-    confounding = c(0, 0.05, 0.1),
-    confounding_sel = c(0, 0.05, 0.1),
-    bodysize_sel_child = seq(0, -0.6, by = -0.2),
-    bodysize_sel_adult = seq(0, -0.6, by = -0.2),
-    cancer_sel         = seq(0, -0.6, by = -0.2),
-    interaction_child_sel = seq(0, -0.6, by = -0.2),
-    interaction_adult_sel = seq(0, -0.6, by = -0.2),
-    interaction_ca_sel = seq(0, -0.6, by = -0.2),
-    interaction_child_adult_sel = seq(0, -0.6, by = -0.2),
+    confounding_sel = seq(0, -0.5, by = -0.25),
+    bodysize_sel_child = seq(0, -0.5, by = -0.25),
+    bodysize_sel_adult = seq(0, -0.5, by = -0.25),
+    cancer_sel         = seq(0, -0.5, by = -0.25),
+    interaction_child_sel = seq(0, -0.5, by = -0.25),
+    interaction_adult_sel = seq(0, -0.5, by = -0.25),
+    interaction_ca_sel = seq(0, -0.5, by = -0.25),
+    interaction_child_adult_sel = seq(0, -0.5, by = -0.25),
     b_adult = c(0, -0.2)
 ) %>% mutate(sim_id = row_number())
+gr <- lapply(1:20, function(x) gr %>% mutate(simrep=x)) %>% bind_rows()
 dim(gr)
 str(gr)
 
-dat <- dat <- do.call(dgm_combined, as.list(gr[1,]))
+dat <- do.call(dgm, as.list(gr[1,]))
+estimation(dat)
 
 sim <- function(...) {
   params <- list(...)
-  dat <- do.call(dgm_combined, params)
+  dat <- do.call(dgm, params)
   if (is.null(dat)) return(NULL)
   est <- estimation(dat)
   if (is.null(est)) return(NULL)
@@ -333,64 +227,11 @@ sim <- function(...) {
   bind_cols(params_df, ov)
 }
 
-sim2 <- function(...) {
-  params <- list(...)
-  dat <- do.call(dgm_combined, params)
-  if (is.null(dat)) return(NULL)
-  est <- estimation2(dat)
-  if (is.null(est)) return(NULL)
-  
-  ov <- calculate_overlap(target_vals, est)
-  
-  params_df <- as_tibble(params)
-  bind_cols(params_df, ov)
-}
 
 plan(multicore, workers = 200)
 
-results <- future_pmap(gr, sim2, .options=furrr_options(seed=TRUE), .progress=TRUE) %>%
+results <- future_pmap(gr, sim, .options=furrr_options(seed=TRUE), .progress=TRUE) %>%
   bind_rows()
 
-
-saveRDS(results, file="results.rds")
+saveRDS(results, file="results_upd.rds")
 dim(results)
-
-
-
-
-# set.seed(1)
-# do.call(sim, as.list(gr[1,]))$beta_est
-# set.seed(1)
-# do.call(sim, as.list(gr[1,]))$beta_est
-
-
-# microbenchmark(
-#   sim1 = do.call(sim, as.list(gr[1,])),
-#   sim2 = do.call(sim2, as.list(gr[1,])),
-#   times = 3
-# )
-
-
-# a <- rbinom(500000, 1, 0.3)
-# b <- rnorm(500000)
-# bmat <- cbind(1, b)
-
-# library(microbenchmark)
-
-# microbenchmark(
-#   fastglm = summary(fastglm(x=bmat, y=a, family=binomial())),
-#   glm = {mtemp <- glm(a ~ b, family=binomial()); vcov(mtemp)},
-#   sglm = summary(glm(a ~ b, family=binomial())),
-#   times = 5
-# )
-
-
-# mtemp <- glm.fit(bmat, a, family=binomial())
-# mtemp <- fastglm(x=bmat, y=a, family=binomial())
-# mtemp <- glm(a ~ b, family=binomial())
-
-# summary(mtemp)
-
-# vcov(mtemp)
-
-# summary(fastglm(x=bmat, y=a, family=binomial()))
