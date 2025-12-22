@@ -176,8 +176,17 @@ bodysize_range    <- c(0, -0.25, -0.5)
 cancer_range      <- c(0, -0.25, -0.5)
 interaction_range <- c(0, -0.25, -0.5)
 
+simulate_confounded(
+  child_vals = bodysize_range,
+  cancer_vals = cancer_range,
+  interaction_vals = interaction_range,
+  n = 250000
+)
+
+library(furrr)
+plan(multicore, workers = 150)
 set.seed(915)
-sim_results_U <- purrr::map_dfr(1:300, function(i) {
+sim_results_U <- furrr::future_map_dfr(1:300, function(i) {
   simulate_confounded(
     child_vals = bodysize_range,
     cancer_vals = cancer_range,
@@ -185,12 +194,12 @@ sim_results_U <- purrr::map_dfr(1:300, function(i) {
     # adjust n or the gamma_sets above as needed
     n = 246511
   ) %>% mutate(replicate = i)
-})
+}, .progress = TRUE, .options = furrr_options(seed = TRUE))
 
 # ----------------------- Summaries and plotting objects -----------------------
 
 summary_logOR_U <- sim_results_U %>%
-  filter(confounding_label %in% c("mild","strong")) %>%     # <<< keep only mild/strong
+  filter(confounding_label %in% c("none", "mild","strong")) %>%     # <<< keep only mild/strong
   group_by(term, bodysize_sel_child, cancer_sel, interaction_sel, confounding_label) %>%
   summarise(
     mean_logOR = mean(beta, na.rm = TRUE),
@@ -202,8 +211,8 @@ summary_logOR_U <- sim_results_U %>%
 # nice, ordered table to print/save
 table_U <- summary_logOR_U %>%
   mutate(
-    confounding_label = factor(confounding_label, levels = c("mild","strong"),
-                               labels = c("Mild confounding","Strong confounding")),
+    confounding_label = factor(confounding_label, levels = c("none", "mild","strong"),
+                               labels = c("No confounding", "Mild confounding","Strong confounding")),
     term_label = dplyr::recode(term, child = "Child effect", adult = "Adult effect"),
     bodysize_label = factor(bodysize_sel_child, levels = c(0, -0.25, -0.50),
                             labels = c("No body size selection",
@@ -236,8 +245,8 @@ dfU <- summary_logOR_U %>%
                                      "Strong cancer under-selection")),
     interaction_label = factor(interaction_sel, levels = c(0, -0.25, -0.50),
                                labels = c("No interaction","Some interaction","Strong interaction")),
-    confounding_label = factor(confounding_label, levels = c("mild","strong"),
-                               labels = c("Mild confounding","Strong confounding")),
+    confounding_label = factor(confounding_label, levels = c("none", "mild","strong"),
+                               labels = c("No confounding", "Mild confounding","Strong confounding")),
     env_lo = mean_logOR - 1.96 * sd_logOR,
     env_hi = mean_logOR + 1.96 * sd_logOR,
     term_label = dplyr::recode(term, child = "Child effect", adult = "Adult effect")
@@ -282,9 +291,9 @@ pU <- ggplot(dfU,
     color    = guide_legend(override.aes = list(linetype = "solid", linewidth = 1.2))
   ) +
   theme_minimal() +
-  theme(axis.text.x = element_text(angle = 60, hjust = 1),
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
         strip.text = element_text(face = "bold"),
-        legend.key.width = grid::unit(2, "cm"))
-
+        legend.key.width = grid::unit(2, "cm"), legend.position = "bottom", legend.direction="vertical")
+ggsave(pU, file="sensitivity-plot.pdf", width = 10, height = 10)
 print(pU)
 
