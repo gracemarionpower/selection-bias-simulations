@@ -18,6 +18,9 @@ library(tidyr)
 library(stringr)
 library(tibble)
 library(grid)
+library(furrr)
+library(here)
+library(fastglm)
 
 # ------------------------------ Data generating model -------------------------
 dgm_confounded <- function(
@@ -108,8 +111,14 @@ estimation <- function(dat) {
   dat_selected$r_child    <- resid(fs_child)
   dat_selected$r_adult    <- resid(fs_adult)
 
-  m2 <- glm(
-    cancer ~ pred_child + pred_adult + r_child + r_adult,
+  x <- data.frame(intercept=rep(1, nrow(dat_selected)),
+             pred_child=dat_selected$pred_child,
+             pred_adult=dat_selected$pred_adult,
+             r_child=dat_selected$r_child,
+             r_adult=dat_selected$r_adult) %>% as.matrix()
+
+  m2 <- fastglm(
+    y = dat_selected$cancer, x = x,
     family = binomial(),
     data   = dat_selected
   )
@@ -183,7 +192,7 @@ simulate_confounded(
   n = 250000
 )
 
-library(furrr)
+
 plan(multicore, workers = 150)
 set.seed(915)
 sim_results_U <- furrr::future_map_dfr(1:300, function(i) {
@@ -196,104 +205,4 @@ sim_results_U <- furrr::future_map_dfr(1:300, function(i) {
   ) %>% mutate(replicate = i)
 }, .progress = TRUE, .options = furrr_options(seed = TRUE))
 
-# ----------------------- Summaries and plotting objects -----------------------
-
-summary_logOR_U <- sim_results_U %>%
-  filter(confounding_label %in% c("none", "mild","strong")) %>%     # <<< keep only mild/strong
-  group_by(term, bodysize_sel_child, cancer_sel, interaction_sel, confounding_label) %>%
-  summarise(
-    mean_logOR = mean(beta, na.rm = TRUE),
-    sd_logOR   = sd(beta, na.rm = TRUE),
-    mean_SE    = mean(se,  na.rm = TRUE),
-    .groups = "drop"
-  )
-
-# nice, ordered table to print/save
-table_U <- summary_logOR_U %>%
-  mutate(
-    confounding_label = factor(confounding_label, levels = c("none", "mild","strong"),
-                               labels = c("No confounding", "Mild confounding","Strong confounding")),
-    term_label = dplyr::recode(term, child = "Child effect", adult = "Adult effect"),
-    bodysize_label = factor(bodysize_sel_child, levels = c(0, -0.25, -0.50),
-                            labels = c("No body size selection",
-                                       "Some selection favouring thin children",
-                                       "Strong selection favouring thin children")),
-    cancer_label = factor(cancer_sel, levels = c(0, -0.25, -0.50),
-                          labels = c("No cancer selection",
-                                     "Some cancer under-selection",
-                                     "Strong cancer under-selection")),
-    interaction_label = factor(interaction_sel, levels = c(0, -0.25, -0.50),
-                               labels = c("No interaction","Some interaction","Strong interaction"))
-  ) %>%
-  arrange(confounding_label, interaction_label, cancer_label, bodysize_label, term_label)
-
-print(table_U)
-
-# ----------------------- plot -----------------------
-
-mr <- log(0.59)
-
-dfU <- summary_logOR_U %>%                                
-  mutate(
-    bodysize_label = factor(bodysize_sel_child, levels = c(0, -0.25, -0.50),
-                            labels = c("No body size selection",
-                                       "Some selection favouring thin children",
-                                       "Strong selection favouring thin children")),
-    cancer_label = factor(cancer_sel, levels = c(0, -0.25, -0.50),
-                          labels = c("No cancer selection",
-                                     "Some cancer under-selection",
-                                     "Strong cancer under-selection")),
-    interaction_label = factor(interaction_sel, levels = c(0, -0.25, -0.50),
-                               labels = c("No interaction","Some interaction","Strong interaction")),
-    confounding_label = factor(confounding_label, levels = c("none", "mild","strong"),
-                               labels = c("No confounding", "Mild confounding","Strong confounding")),
-    env_lo = mean_logOR - 1.96 * sd_logOR,
-    env_hi = mean_logOR + 1.96 * sd_logOR,
-    term_label = dplyr::recode(term, child = "Child effect", adult = "Adult effect")
-  )
-
-pd  <- position_dodge(width = 0.35)
-yr  <- range(dfU$env_lo, dfU$env_hi, mr, na.rm = TRUE)
-pad <- diff(yr) * 0.12
-ymin <- min(yr[1] - pad, mr - 0.02); ymax <- yr[2] + pad
-off  <- 0.03 * (ymax - ymin)
-
-# put the MR label on the first column ("No interaction") and both rows (mild/strong)
-mr_label_df <- expand.grid(
-  interaction_label = factor("No interaction", levels = levels(dfU$interaction_label)),
-  confounding_label = factor(levels(dfU$confounding_label), levels = levels(dfU$confounding_label))
-) |>
-  transform(x = 1, y = mr - off, label = "Observed MR log(OR) ≈ -0.53")
-
-pU <- ggplot(dfU,
-             aes(bodysize_label, mean_logOR,
-                 color = cancer_label,
-                 linetype = term_label,
-                 group = interaction(cancer_label, term_label))) +
-  geom_errorbar(aes(ymin = env_lo, ymax = env_hi),
-                position = pd, width = 0.15, show.legend = FALSE) +
-  geom_point(position = pd, size = 2, show.legend = FALSE) +
-  geom_line(position = pd, linewidth = 0.9, lineend = "butt", show.legend = TRUE) +
-  facet_grid(confounding_label ~ interaction_label) +
-  geom_hline(yintercept = mr, linetype = "dashed", color = "red") +
-  geom_text(data = mr_label_df, inherit.aes = FALSE,
-            aes(x = x, y = y, label = label),
-            color = "red", size = 3, hjust = 0, vjust = 1.1) +
-  coord_cartesian(ylim = c(ymin, ymax)) +
-  labs(x = "Selection on childhood body size",
-       y = "Mean log(OR) across replicates",
-       color = "Breast cancer selection",
-       linetype = "Effect") +
-  scale_linetype_manual(values = c("Child effect" = "solid",
-                                   "Adult effect" = "33")) +
-  guides(
-    linetype = guide_legend(override.aes = list(shape = NA, linewidth = 1.3, lineend = "butt")),
-    color    = guide_legend(override.aes = list(linetype = "solid", linewidth = 1.2))
-  ) +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1),
-        strip.text = element_text(face = "bold"),
-        legend.key.width = grid::unit(2, "cm"), legend.position = "bottom", legend.direction="vertical")
-ggsave(pU, file="sensitivity-plot.pdf", width = 10, height = 10)
-print(pU)
-
+saveRDS(sim_results_U, file=here("sims/sim_results_U.rds"))

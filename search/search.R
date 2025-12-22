@@ -74,7 +74,7 @@ dgm <- function(
     U * confounding_sel +
     (child_c * cancer) * interaction_child_sel +   # 0, -0.25, -0.5 (logit per +1 cat)
     (adult_c * cancer) * interaction_adult_sel +
-    (adult_c * child_c) * interaction_ca_sel +
+  (adult_c * child_c) * interaction_ca_sel +
     (adult_c * child_c * cancer) * interaction_child_adult_sel
 
   selection_prob <- plogis(selection_liability)
@@ -197,17 +197,17 @@ gr <- expand.grid(
     phi_track = 0.35,
     h2_child = 0.10,
     h2_adult_target = 0.10,
-    confounding_sel = seq(0, -0.5, by = -0.25),
-    bodysize_sel_child = seq(0, -0.5, by = -0.25),
-    bodysize_sel_adult = seq(0, -0.5, by = -0.25),
-    cancer_sel         = seq(0, -0.5, by = -0.25),
-    interaction_child_sel = seq(0, -0.5, by = -0.25),
-    interaction_adult_sel = seq(0, -0.5, by = -0.25),
-    interaction_ca_sel = seq(0, -0.5, by = -0.25),
-    interaction_child_adult_sel = seq(0, -0.5, by = -0.25),
+    confounding_sel = seq(0.5, -0.5, by = -0.25),
+    bodysize_sel_child = seq(0.5, -0.5, by = -0.25),
+    bodysize_sel_adult = seq(0.5, -0.5, by = -0.25),
+    cancer_sel         = seq(0.5, -0.5, by = -0.25),
+    interaction_child_sel = seq(0.5, -0.5, by = -0.25),
+    interaction_adult_sel = seq(0.5, -0.5, by = -0.25),
+    interaction_ca_sel = seq(0.5, -0.5, by = -0.25),
+    interaction_child_adult_sel = seq(0.5, -0.5, by = -0.25),
     b_adult = c(0, -0.2)
 ) %>% mutate(sim_id = row_number())
-gr <- lapply(1:20, function(x) gr %>% mutate(simrep=x)) %>% bind_rows()
+gr <- lapply(1, function(x) gr %>% mutate(simrep=x)) %>% bind_rows()
 dim(gr)
 str(gr)
 

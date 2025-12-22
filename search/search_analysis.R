@@ -7,9 +7,11 @@ library(MASS)
 library(grid)
 library(furrr)
 library(UpSetR)
+library(here)
 
 
-results <- readRDS("results_upd.rds")
+results <- readRDS(here("search/results_upd.rds"))
+dim(results)
 prob_same <- function(b1, b2, se1, se2) {
   diff <- b1 - b2
   se_diff <- sqrt(se1^2 + se2^2)
@@ -48,23 +50,6 @@ summary(glm(total_overlap ~ bodysize_sel_adult + bodysize_sel_child + cancer_sel
 
 prop.table(table(results_sum$total_overlap))
 
-summary(results_sum$prob_het)
-
-table(results_sum$prob_het > 0.1)
-table(results_sum$p_same_all > 0.1) %>% prop.table() %>% {. * 100}
-table(results_sum$p_same_at_least_one > 0.1) %>% prop.table() %>% {. * 100}
-
-
-a <- subset(results_sum, p_same > 0.1)
-b <- subset(results, sim_id %in% a$sim_id) %>% ungroup() %>% dplyr::select(contains("_sel"), b_adult, beta_target, beta_est, timepoint, model, p_same, lower_target, upper_target, lower_est, upper_est, sim_id)
-
-summary(b)
-
-a <- subset(results_sum, p_same > 0.1 & interaction_child_adult_sel == 0)
-b <- subset(results, sim_id %in% a$sim_id) %>% ungroup() %>% dplyr::select(contains("_sel"), b_adult, beta_target, beta_est, timepoint, model, p_same, lower_target, upper_target, lower_est, upper_est, sim_id)
-
-summary(b)
-
 ## Upset plot
 
 
@@ -78,7 +63,7 @@ l <- list(
   adult_univariable = subset(temp, name == "adult_univariable")$sim %>% unique()
 )
 
-pdf("upset_plot.pdf", width=5, height=6, onefile=FALSE)
+pdf(here("search/upset_plot.pdf"), width=5, height=6, onefile=FALSE)
 upset(fromList(l), order.by = "freq")
 dev.off()
 
