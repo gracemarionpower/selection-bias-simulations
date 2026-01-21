@@ -1,0 +1,43 @@
+Cancer Type,Age Group,Men - UK Biobank,Men - General Population,Women - UK Biobank,Women - General Population
+All cancer excluding non-melanoma skin cancer,45-49,177.7,201.0,438.0,408.2
+All cancer excluding non-melanoma skin cancer,50-54,330.5,356.9,514.7,551.2
+All cancer excluding non-melanoma skin cancer,55-59,621.6,670.7,615.8,703.4
+All cancer excluding non-melanoma skin cancer,60-64,1011.9,1146.8,835.0,963.5
+All cancer excluding non-melanoma skin cancer,65-69,1644.1,1706.3,1062.4,1241.2
+All cancer excluding non-melanoma skin cancer,70-74,2037.5,2310.9,1209.2,1477.3
+Prostate,45-49,23.6,17.0,,
+Prostate,50-54,83.2,63.2,,
+Prostate,55-59,219.4,173.4,,
+Prostate,60-64,406.3,336.1,,
+Prostate,65-69,722.1,572.6,,
+Prostate,70-74,807.7,691.3,,
+Breast,45-49,,,280.8,222.9
+Breast,50-54,,,274.3,271.5
+Breast,55-59,,,260.9,263.0
+Breast,60-64,,,357.3,342.7
+Breast,65-69,,,405.4,403.2
+Breast,70-74,,,332.5,336.2
+Colon and rectum,45-49,22.9,25.1,19.3,19.8
+Colon and rectum,50-54,50.4,47.4,40.0,35.3
+Colon and rectum,55-59,81.7,86.7,58.5,60.4
+Colon and rectum,60-64,141.2,159.9,84.0,92.5
+Colon and rectum,65-69,194.2,210.2,111.7,128.3
+Colon and rectum,70-74,253.8,317.9,164.7,193.6
+"Lung, trachea, bronchus",45-49,4.7,14.8,8.5,15.2
+"Lung, trachea, bronchus",50-54,19.3,33.3,17.4,32.3
+"Lung, trachea, bronchus",55-59,41.1,80.1,33.5,70.3
+"Lung, trachea, bronchus",60-64,66.5,147.6,50.2,113.9
+"Lung, trachea, bronchus",65-69,118.7,233.1,89.8,178.6
+"Lung, trachea, bronchus",70-74,186.3,361.0,119.1,245.9
+Endometrial,45-49,,,12.5,12.1
+Endometrial,50-54,,,27.8,30.3
+Endometrial,55-59,,,47.4,54.3
+Endometrial,60-64,,,56.8,69.0
+Endometrial,65-69,,,70.0,83.5
+Endometrial,70-74,,,75.0,91.7
+Kidney,45-49,5.4,12.2,4.0,6.3
+Kidney,50-54,14.1,18.9,5.2,9.6
+Kidney,55-59,25.2,26.9,10.6,14.4
+Kidney,60-64,32.4,42.1,17.4,21.3
+Kidney,65-69,48.9,52.4,20.5,21.7
+Kidney,70-74,54.5,65.1,26.3,35.7
