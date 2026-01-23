@@ -3,9 +3,6 @@
 #        Childhood & adulthood body size and breast cancer risk
 # Author: Grace M. Power
 # Date:   23 Jan 2026
-# Purpose: Reviewer sensitivity – if selection is driven by ADULT body size
-#          rather than childhood body size, does collider bias induce
-#          spurious lifecourse MR effects under a sharp null?
 # ------------------------------------------------------------------------------
 
 rm(list = ls())
@@ -212,3 +209,79 @@ saveRDS(
   sim_results_adult_sel,
   file = here("sims/sim_results_adult_selection.rds")
 )
+
+
+# -------------------- Summarise (adult selection) --------------------
+plot_df <- sim_results_adult_sel %>%
+  dplyr::group_by(confounding_label,
+                  bodysize_sel_adult,
+                  cancer_sel,
+                  interaction_sel,
+                  term) %>%
+  dplyr::summarise(
+    mean_logOR = mean(beta, na.rm = TRUE),
+    sd_logOR   = sd(beta,   na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  dplyr::mutate(
+    # force confounding order
+    confounding_label = factor(confounding_label,
+                               levels = c("none","mild","strong"),
+                               labels = c("No confounding",
+                                          "Moderate confounding",
+                                          "Strong confounding")),
+
+    bodysize_label = factor(bodysize_sel_adult,
+                            levels = c(0, -0.25, -0.5),
+                            labels = c("No body size selection",
+                                       "Some selection favouring thin adults",
+                                       "Strong selection favouring thin adults")),
+
+    cancer_label = factor(cancer_sel,
+                          levels = c(0, -0.25, -0.5),
+                          labels = c("No cancer selection",
+                                     "Some cancer under-selection",
+                                     "Strong cancer under-selection")),
+
+    interaction_label = factor(interaction_sel,
+                               levels = c(0, -0.25, -0.5),
+                               labels = c("No interaction",
+                                          "Some interaction",
+                                          "Strong interaction")),
+
+    term_label = ifelse(term == "child", "Child effect", "Adult effect"),
+
+    env_lo = mean_logOR - 1.96 * sd_logOR,
+    env_hi = mean_logOR + 1.96 * sd_logOR
+  )
+
+# -------------------- Plot --------------------
+mr <- log(0.59)
+pd <- position_dodge(width = 0.35)
+
+ggplot(plot_df,
+       aes(bodysize_label, mean_logOR,
+           colour = cancer_label,
+           linetype = term_label,
+           group = interaction(confounding_label, cancer_label, term_label))) +
+  geom_errorbar(aes(ymin = env_lo, ymax = env_hi),
+                position = pd, width = 0.15, show.legend = FALSE) +
+  geom_point(position = pd, size = 2, show.legend = FALSE) +
+  geom_line(position = pd, linewidth = 0.9) +
+  facet_grid(confounding_label ~ interaction_label) +
+  geom_hline(yintercept = mr, linetype = "dashed", colour = "red") +
+  coord_cartesian(ylim = c(-0.75, 0.2)) +
+  labs(
+    x = "Selection on adulthood body size",
+    y = "Mean log(OR) across replicates",
+    colour = "Breast cancer selection",
+    linetype = "Effect"
+  ) +
+  scale_linetype_manual(values = c("Child effect" = "solid",
+                                   "Adult effect" = "33")) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 60, hjust = 1),
+    strip.text = element_text(face = "bold"),
+    legend.key.width = unit(2, "cm")
+  )
