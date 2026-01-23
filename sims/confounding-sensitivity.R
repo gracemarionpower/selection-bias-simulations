@@ -1,5 +1,5 @@
 # ------------------------------------------------------------------------------
-# Title: Sensitivity sims with a common confounder U
+# Title: Simulations with a common confounder U
 #        Childhood body size and breast cancer risk
 # Author: Grace M. Power
 # Date:   30 Oct 2025
